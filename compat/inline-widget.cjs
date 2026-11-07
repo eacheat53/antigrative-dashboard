@@ -49,9 +49,9 @@ module.exports = function installAgPulseInlineWidget() {
   const label=g=>/gemini/i.test(g?.name||'')?'Gemini':/claude|gpt/i.test(g?.name||'')?'Claude / GPT':g?.name||t('group');
   const $=id=>root?.getElementById(id);
   const text=(id,value)=>{const e=$(id);if(e&&e.textContent!==String(value))e.textContent=String(value);};
-  const attribute=(element,name,value)=>{if(value===null){if(element.hasAttribute(name))element.removeAttribute(name);}else if(element.getAttribute(name)!==String(value))element.setAttribute(name,String(value));};
-  const style=(element,name,value)=>{if(element.style.getPropertyValue(name)!==value)element.style.setProperty(name,value);};
-  const hidden=(element,value)=>{if(element.hidden!==value)element.hidden=value;};
+  const attribute=(element,name,value)=>{if(!element)return;if(value===null){if(element.hasAttribute(name))element.removeAttribute(name);}else if(element.getAttribute(name)!==String(value))element.setAttribute(name,String(value));};
+  const style=(element,name,value)=>{if(!element)return;if(element.style.getPropertyValue(name)!==value)element.style.setProperty(name,value);};
+  const hidden=(element,value)=>{if(!element)return;if(element.hidden!==value)element.hidden=value;};
   const GUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const conversationId=()=>{
     if(surface)return surface.conversationId(composer);
@@ -80,8 +80,10 @@ module.exports = function installAgPulseInlineWidget() {
     for(const button of root.querySelectorAll('[data-language-choice]')){attribute(button,'aria-pressed',button.dataset.languageChoice===language.language);attribute(button,'data-save-failed',preferences.error);attribute(button,'title',preferences.error?t('languageSaveFailed'):button.textContent);}
     text('language-save-note',preferences.error?t('languageSaveFailed'):'');
     const zh=language.language==='zh-CN';
-    text('usage-today-label',zh?'今日用量':'Today');text('usage-month-label',zh?'本月用量':'This month');
-    text('usage-open-label',zh?'查看用量统计':'View token usage');
+    text('usage-today-label',zh?'今日':'Today');
+    text('usage-week-label',zh?'本周':'Week');
+    text('usage-month-label',zh?'本月':'Month');
+    if($('open-usage'))attribute($('open-usage'),'title',zh?'点击查看完整 Token 用量详情':'Click to open token usage dashboard');
     updateGuide();
   }
   function stopDensityMotion(){
@@ -507,39 +509,96 @@ module.exports = function installAgPulseInlineWidget() {
     :host(.native-no-room){flex:0 0 0px!important;width:0!important;max-width:0!important;margin:0!important}
     .density-stage{position:absolute;overflow:clip;pointer-events:none;user-select:none}.density-piece{pointer-events:none!important}
     .scope-note{margin:0 0 10px;color:var(--pulse-muted);font-size:10px}:host([data-scope=main]) .scope-note,:host([data-scope=ide]) .scope-note{display:none}
-    .language-button[data-save-failed=true]{color:var(--pulse-warning);text-decoration:underline dotted}.context-ring{display:inline-block;flex:none;width:12px;height:12px;border-radius:50%;background:conic-gradient(var(--pulse-ring) var(--used-angle,0deg),var(--pulse-ring-track) 0);mask:radial-gradient(circle,transparent 43%,#000 47%)}:host(.narrow) .context-label{display:none}
-    #rate-note{white-space:pre-line;font-size:11px;line-height:1.65}
-    #transcript-details{margin-top:12px;border-top:1px solid var(--pulse-separator);padding-top:10px}#transcript-details summary{cursor:pointer;font-size:11px;color:var(--pulse-label)}#transcript-total{float:right;margin-left:8px;font-variant-numeric:tabular-nums;color:var(--pulse-foreground);font-size:10px}
-    .bar{gap:6px}.chip{font-size:11px;gap:5px;padding:3px 5px}.context-card>strong{font-size:16px}.context-card>p{margin:8px 0}.quota-heading{margin-top:14px;padding-top:12px;border-top:1px solid var(--pulse-separator)}.quota-title{display:flex;align-items:center;gap:6px;font-size:11px}.quota-title>span:first-child{display:flex;align-items:center;gap:6px;margin-right:auto}.quota-title strong{font-variant-numeric:tabular-nums;font-size:13px}.quota-section+.quota-section{border-top:1px solid var(--pulse-separator);margin-top:12px;padding-top:12px}.quota-section .track{margin:8px 0}.quota-section .footnote{margin-top:6px}.quota-section dl div{margin:6px 0}.context-label{white-space:nowrap}
-    :host(.icons-only) .bar{gap:2px}:host(.icons-only) .chip{flex:0 0 24px;width:24px;min-width:24px;height:24px;padding:0;gap:0;justify-content:center}:host(.icons-only) .chip>:not(svg):not(.context-ring){display:none}:host(.icons-only) .bar>.language-button,:host(.icons-only) .bar>.dot{display:none}:host(.icons-only) .chip svg{display:block}.card-language{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid var(--pulse-separator);font-size:10px;color:var(--pulse-muted)}
-    .refresh{display:inline-grid;place-items:center}.refresh[aria-busy=true]{color:var(--pulse-emphasis);cursor:wait}.refresh[aria-busy=true] svg{animation:pulse-refresh-spin 1s linear infinite;transform-origin:center}
-    @keyframes pulse-refresh-spin{to{transform:rotate(360deg)}}
-    @media(prefers-reduced-motion:reduce){.refresh[aria-busy=true] svg{animation:none;opacity:.65}}
+    .language-button[data-save-failed=true]{color:var(--pulse-warning);text-decoration:underline dotted}
+    .context-ring{display:inline-block;flex:none;width:12px;height:12px;border-radius:50%;background:conic-gradient(var(--pulse-ring) var(--used-angle,0deg),var(--pulse-ring-track) 0);mask:radial-gradient(circle,transparent 43%,#000 47%)}
+    :host(.narrow) .context-label{display:none}
+    .cache-badge{font-size:10px;color:var(--pulse-muted);font-variant-numeric:tabular-nums}
+    :host(.narrow) .cache-badge{display:none}
+    :host(.icons-only) .cache-badge{display:none}
+    .context-card{width:320px;max-width:calc(100vw - 32px);padding:14px 16px 12px;border-radius:14px}
+    .context-header-stats{margin:4px 0 8px}
+    .context-header-stats>strong{font-size:15px;display:block}
+    .context-header-stats>p{margin:4px 0 0;font-size:11px;color:var(--pulse-muted)}
+    .segmented-track{display:flex;height:6px;border-radius:3px;background:var(--pulse-track);margin:10px 0 12px;overflow:hidden;gap:1px}
+    .segmented-track>i{height:100%;display:block;transition:width 180ms ease}
+    .seg-user{background:#3b82f6;width:0}
+    .seg-agent{background:#10b981;width:0}
+    .seg-tool{background:#f59e0b;width:0}
+    .seg-system{background:#8b5cf6;width:0}
+    .cache-box{margin:11px 0 9px;padding:9px 0 10px;border-top:1px solid var(--pulse-separator);border-bottom:1px solid var(--pulse-separator);background:none}
+    .cache-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;font-size:11px}
+    .cache-header span{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--pulse-label)}
+    .cache-tag{font-size:11px;color:var(--pulse-muted)}
+    .cache-tag strong{color:var(--pulse-emphasis);font-weight:600}
+    .cache-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px;color:var(--pulse-muted)}
+    .cache-grid strong{color:var(--pulse-foreground);font-variant-numeric:tabular-nums;font-weight:500}
+    .breakdown-box{margin:10px 0}
+    .breakdown-title{font-size:11px;font-weight:600;color:var(--pulse-label);margin-bottom:6px}
+    .breakdown-dl{margin:0}
+    .breakdown-dl div{display:flex;align-items:baseline;justify-content:space-between;margin:4px 0;font-size:11px}
+    .breakdown-dl dt{color:var(--pulse-foreground);display:flex;align-items:center;gap:5px}
+    .breakdown-dl dd{color:var(--pulse-foreground);font-variant-numeric:tabular-nums;margin:0}
+    .bar{gap:6px}.chip{font-size:11px;gap:5px;padding:3px 5px}.context-label{white-space:nowrap}
+    :host(.icons-only) .bar{gap:2px}:host(.icons-only) .chip{flex:0 0 24px;width:24px;min-width:24px;height:24px;padding:0;gap:0;justify-content:center}:host(.icons-only) .chip>:not(svg):not(.context-ring){display:none}:host(.icons-only) .bar>.language-button,:host(.icons-only) .bar>.dot{display:none}:host(.icons-only) .chip svg{display:block}
+    #usage-entry{border-top:1px solid var(--pulse-separator);padding-top:10px;margin-top:10px}
+    #usage-entry[hidden]{display:none}
+    .usage-summary-btn{display:block;width:100%;margin:0;padding:8px 10px;border:1px solid var(--pulse-separator);border-radius:8px;background:color-mix(in srgb,var(--pulse-foreground) 3%,transparent);color:var(--pulse-foreground);font:inherit;text-align:left;cursor:pointer;transition:background 140ms ease,border-color 140ms ease,transform 120ms ease}
+    .usage-summary-btn:hover{background:var(--pulse-hover);border-color:var(--pulse-border)}
+    .usage-summary-btn:active{transform:scale(.98)}
+    .usage-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0}
+    .usage-summary-grid>div{display:block;min-width:0;margin:0}
+    .usage-summary-grid dt{font-size:10px;line-height:14px;color:var(--pulse-muted);margin:0 0 2px}
+    .usage-summary-grid dd{display:flex;align-items:baseline;justify-content:flex-start;gap:2px;margin:0;white-space:nowrap;line-height:18px}
+    .usage-summary-grid strong{font-size:13px;font-weight:600;letter-spacing:-.3px;color:var(--pulse-foreground);font-variant-numeric:tabular-nums}
+    .usage-unit{font-size:9px;letter-spacing:0;color:var(--pulse-muted)}
     </style><div class="bar" data-i18n-aria="strip" aria-label="Dashboard statistics">
       <span class="dot" id="dot" title="Connecting"></span>
-      <button class="chip" data-card="speed" data-i18n-aria="session" hidden aria-controls="speed-card" aria-expanded="false">${svg('speed')}<span class="rounds dim" id="rounds"></span><strong id="tps">—</strong><span>tok/s</span></button>
-      <button class="chip" data-card="cache" data-i18n-aria="cacheTitle" hidden aria-controls="cache-card" aria-expanded="false">${svg('cache')}<span class="cache-total" id="cache-total">— tok</span><span class="dim">·</span><span data-i18n="cache">Cache hit</span><strong id="cache-rate">—</strong></button>
-      <button class="chip" data-card="context" data-i18n-aria="context" hidden aria-controls="context-card" aria-expanded="false"><span class="context-ring" id="context-ring" aria-hidden="true"></span><span class="context-label" data-i18n="contextShort">Ctx</span><strong id="context-percent">—</strong></button>
-    </div><section class="card" id="speed-card" role="region" data-i18n-aria="session" aria-label="Session statistics" hidden>
-      <div class="heading"><span>${svg('speed')}<span data-i18n="session">Session statistics</span></span><span class="tag" id="samples">—</span></div>
-      <dl>${[['modelTime','model-time'],['toolTime','tool-time'],['ttft','ttft'],['sessionTps','session-rate'],['latest','latest-rate'],['tokens','tokens']].map(([key,id])=>`<div><dt data-i18n="${key}">${t(key)}</dt><dd id="${id}">—</dd></div>`).join('')}</dl><p class="footnote" id="rate-note">${t('responseBasis')}</p>
-    </section><section class="card" id="cache-card" role="region" data-i18n-aria="cacheTitle" aria-label="Token cache" hidden>
-      <div class="heading"><span>${svg('cache')}<span data-i18n="cacheTitle">Token cache</span></span><span class="tag" id="cache-coverage">—</span></div>
-      <dl>${[['cacheRate','cache-detail-rate'],['cacheMiss','cache-miss'],['cacheRead','cache-read'],['cacheOutput','cache-output'],['cacheWrite','cache-write']].map(([key,id])=>`<div ${id==='cache-write'?'id="cache-write-row" hidden':''}><dt data-i18n="${key}">${t(key)}</dt><dd id="${id}">—</dd></div>`).join('')}</dl><p class="footnote" id="cache-note">${t('cacheBasis')}</p>
-    </section><section class="card context-card" id="context-card" role="region" data-i18n-aria="context" hidden>
-      <div class="heading"><span>${svg('context')}<span data-i18n="context">Context window</span></span></div>
-      <strong id="context-summary">—</strong><p id="context-tokens">—</p>
-      <div class="track" role="progressbar" data-i18n-aria="context" id="context-track"><i id="context-fill"></i></div>
-      <dl><div><dt data-i18n="contextModel">Sampled model</dt><dd id="context-model">—</dd></div><div><dt data-i18n="contextHostLimit">Active window (host)</dt><dd id="context-host-limit">—</dd></div><div id="context-provider-row" hidden><dt data-i18n="contextProviderCapacity">Provider capacity reference</dt><dd id="context-provider-limit">—</dd></div><div><dt data-i18n="contextCompressionLimit">Compaction threshold</dt><dd id="context-compaction-limit">—</dd></div></dl><p class="footnote" id="context-note">—</p><details id="transcript-details" hidden><summary><span data-i18n="transcriptTitle">Recorded text estimate</span><span id="transcript-total">—</span></summary><dl><div><dt data-i18n="transcriptUser">User text</dt><dd id="transcript-user">—</dd></div><div><dt data-i18n="transcriptAssistant">Replies + thinking</dt><dd id="transcript-assistant">—</dd></div><div><dt data-i18n="transcriptTool">Tool output</dt><dd id="transcript-tool">—</dd></div><div><dt data-i18n="transcriptSystem">System text</dt><dd id="transcript-system">—</dd></div><div><dt data-i18n="transcriptMarkers">Compaction markers</dt><dd id="transcript-markers">—</dd></div><div><dt data-i18n="transcriptImages">Image-generation steps</dt><dd id="transcript-images">—</dd></div></dl></details>
-      <div class="heading quota-heading"><span data-i18n="group">Quota group</span><div class="toolbar"><button class="group-trigger" data-i18n-aria="group" aria-haspopup="listbox" aria-expanded="false">Quota ▾</button><div class="group-menu" role="listbox" data-i18n-aria="selectGroup" hidden></div><button class="refresh" data-i18n-aria="refresh" aria-label="Refresh quota" title="Refresh quota"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.8 6a5.1 5.1 0 1 0 .1 4M12.8 2.5V6H9.2"/></svg></button></div></div>
-      <div class="quota-details">${['five','week'].map(name=>`<section class="quota-section" data-i18n-aria="${name}" aria-label="${t(name)}"><div class="quota-title"><span>${svg(name)}<span data-i18n="${name}">${t(name)}</span></span><strong id="${name}-balance">—</strong><span class="dim" data-i18n="remaining">remaining</span></div><div class="track" role="progressbar" data-i18n-aria="${name}" id="${name}-track"><i id="${name}-fill"></i></div><dl><div><dt data-i18n="resetIn">Resets in</dt><dd class="reset" id="${name}-countdown">—</dd></div><div><dt data-i18n="resetTime">Reset time (UTC+8)</dt><dd id="${name}-reset">—</dd></div></dl><p class="footnote" id="${name}-note">${t('loadingQuota')}</p></section>`).join('')}</div>
+      <button class="chip" data-card="speed" hidden style="display:none!important"></button>
+      <button class="chip" data-card="cache" hidden style="display:none!important"></button>
+      <button class="chip" data-card="context" data-i18n-aria="context" hidden aria-controls="context-card" aria-expanded="false">
+        <span class="context-ring" id="context-ring" aria-hidden="true"></span>
+        <span class="context-label" id="context-label"><span data-i18n="contextShort">Ctx</span> <strong id="context-percent">—</strong></span>
+        <span class="cache-badge" id="bar-cache-badge"> · ⚡<span id="bar-cache-rate">—</span></span>
+      </button>
+    </div>
+    <div id="speed-card" hidden style="display:none!important"></div>
+    <div id="cache-card" hidden style="display:none!important"></div>
+    <section class="card context-card" id="context-card" role="region" data-i18n-aria="context" hidden>
+      <div class="heading"><span>${svg('context')}<span data-i18n="contextUsageTitle">Context Usage</span></span><span class="tag" id="context-model">—</span></div>
+      <div class="context-header-stats">
+        <strong id="context-summary">—</strong>
+        <p id="context-tokens">—</p>
+      </div>
+      <div class="segmented-track" id="context-segmented-track" role="progressbar" aria-label="Context breakdown">
+        <i class="seg-user" id="seg-user" title="User messages"></i>
+        <i class="seg-agent" id="seg-agent" title="Agent responses"></i>
+        <i class="seg-tool" id="seg-tool" title="Tool calls"></i>
+        <i class="seg-system" id="seg-system" title="System & rules"></i>
+      </div>
+      <div class="cache-box" id="card-cache-box">
+        <div class="cache-header">
+          <span>${svg('cache')}<strong data-i18n="cacheTitle">Token Cache</strong></span>
+          <span class="cache-tag"><span data-i18n="cacheHitRate">Hit rate</span>: <strong id="card-cache-hit-rate">—</strong></span>
+        </div>
+        <div class="cache-grid">
+          <div><span data-i18n="cacheReadTokens">Cached read</span>: <strong id="card-cache-read">—</strong></div>
+          <div><span data-i18n="cacheMissTokens">Uncached</span>: <strong id="card-cache-miss">—</strong></div>
+        </div>
+      </div>
+      <div class="breakdown-box">
+        <div class="breakdown-title" data-i18n="usageBreakdown">Usage breakdown</div>
+        <dl class="breakdown-dl">
+          <div><dt>🔵 <span data-i18n="transcriptUser">User messages</span></dt><dd id="bd-user">—</dd></div>
+          <div><dt>🟢 <span data-i18n="transcriptAssistant">Agent responses</span></dt><dd id="bd-agent">—</dd></div>
+          <div><dt>🟠 <span data-i18n="transcriptTool">Tool calls</span></dt><dd id="bd-tool">—</dd></div>
+          <div><dt>🟣 <span data-i18n="transcriptSystem">System & rules</span></dt><dd id="bd-system">—</dd></div>
+          <div><dt>🔲 <span data-i18n="freeSpace">Free space</span></dt><dd id="bd-free">—</dd></div>
+        </dl>
+      </div>
+      <p class="footnote" id="context-note">—</p>
     </section>`);
     row.insertBefore(node,branch.nextSibling);
     for(const card of root.querySelectorAll('.card')){const note=document.createElement('p');note.className='scope-note';note.dataset.i18n='subagentStats';card.querySelector('.heading').after(note);}
-    const languageRow=document.createElement('div');languageRow.className='card-language';
-    setMarkup(languageRow,'<span>Language / 语言</span><div class="language-options" role="group" aria-label="Language / 语言"><button type="button" class="language-button" id="card-language-en" data-language-choice="en">English</button><button type="button" class="language-button" id="card-language-zh" data-language-choice="zh-CN">简体中文</button></div>');
-    $('context-card').append(languageRow);
-    const saveNote=document.createElement('p');saveNote.className='footnote';saveNote.id='language-save-note';languageRow.after(saveNote);
     const guide=document.createElement('section');guide.className='language-guide';guide.id='language-guide';guide.hidden=true;guide.setAttribute('role','region');guide.setAttribute('aria-label','Language / 语言');
     setMarkup(guide,'<div class="guide-heading"><strong>Language <span>/ 语言</span></strong><button type="button" id="guide-close" aria-label="Dismiss language tip / 关闭语言提示" title="Dismiss / 关闭">×</button></div><button type="button" id="guide-open"><span><span>Switch in context details</span><span lang="zh-CN">在上下文详情中切换语言</span></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8 4l4 4-4 4"/></svg></button><p class="footnote" id="guide-save-note"></p>');
     root.append(guide);
@@ -590,16 +649,10 @@ module.exports = function installAgPulseInlineWidget() {
     for(const button of root.querySelectorAll('[data-language-choice]'))button.addEventListener('click',()=>{closeGroup();void preferences.choose(button.dataset.languageChoice);});
     if(window.__agPulseUsageFactory){
       const section=document.createElement('div');section.id='usage-entry';section.hidden=true;
-      setMarkup(section,'<dl class="usage-summary"><div><dt id="usage-today-label"></dt><dd><strong id="usage-today"></strong><span class="usage-unit">Token</span></dd></div><div><dt id="usage-month-label"></dt><dd><strong id="usage-month"></strong><span class="usage-unit">Token</span></dd></div></dl><button type="button" id="open-usage"><span id="usage-open-label"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>');$('cache-card').append(section);
-      const css=document.createElement('style');css.textContent='#usage-entry{border-top:1px solid var(--pulse-separator);padding-top:7px;margin-top:12px}#usage-entry[hidden]{display:none}#open-usage{width:100%;display:flex;justify-content:space-between;padding:8px 10px;margin-top:9px;border:1px solid var(--pulse-border);border-radius:7px;background:var(--pulse-control);color:var(--pulse-foreground);font:inherit;transition:background 140ms ease,transform 120ms ease}#open-usage:hover{background:var(--pulse-hover)}#open-usage:active{transform:scale(.98)}';root.append(css);
-      css.textContent+=`
-        #usage-entry{padding-top:13px;margin-top:14px}.usage-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding-bottom:13px;border-bottom:1px solid var(--pulse-separator)}
-        .usage-summary>div{display:block;min-width:0;margin:0}.usage-summary dt{font-size:10px;line-height:16px;color:var(--pulse-muted);margin:0 0 5px}.usage-summary dd{display:flex;align-items:baseline;justify-content:flex-start;gap:5px;margin:0;white-space:nowrap;text-align:left;line-height:24px}
-        .usage-summary strong{font-size:20px;font-weight:550;letter-spacing:-.5px;color:var(--pulse-foreground);font-variant-numeric:tabular-nums}.usage-unit{font-size:9px;letter-spacing:0;color:var(--pulse-muted)}
-        #open-usage{align-items:center;min-height:34px;gap:12px;width:calc(100% + 12px);margin:5px -6px -3px;padding:7px 6px;border:0;border-radius:6px;background:transparent;color:var(--pulse-label);font-size:11px;text-align:left;line-height:20px}#open-usage:hover{background:var(--pulse-hover);color:var(--pulse-foreground)}#open-usage svg{width:14px;height:14px;color:var(--pulse-muted);flex:none}
-      `;
+      setMarkup(section,'<button type="button" id="open-usage" class="usage-summary-btn" aria-label="Token usage"><dl class="usage-summary-grid"><div><dt id="usage-today-label">Today</dt><dd><strong id="usage-today">—</strong><span class="usage-unit">tok</span></dd></div><div><dt id="usage-week-label">Week</dt><dd><strong id="usage-week">—</strong><span class="usage-unit">tok</span></dd></div><div><dt id="usage-month-label">Month</dt><dd><strong id="usage-month">—</strong><span class="usage-unit">tok</span></dd></div></dl></button>');
+      $('context-card').append(section);
       usageDashboard=window.__agPulseUsageFactory({root,language,setMarkup,hostLabel:surface?.usageHostLabel||'Antigravity',guideDismissed:usageGuideDismissed,onDismissGuide:async()=>{const saved=await window.agPulseHost.setPreferences({usageGuideDismissed:true});if(saved?.usageGuideDismissed!==true)throw Error('Usage guide could not be saved');syncGuide(saved);},onLanguage:next=>preferences.choose(next),onRefresh:()=>refreshManually()});
-      $('open-usage').addEventListener('click',()=>{const trigger=root.querySelector('[data-card=cache]');hide();usageDashboard.open(data?.usage,trigger);});
+      $('open-usage').addEventListener('click',()=>{const trigger=root.querySelector('[data-card=context]');hide();usageDashboard.open(data?.usage,trigger);});
     }
     localize();
     render();refresh();
@@ -609,7 +662,10 @@ module.exports = function installAgPulseInlineWidget() {
     syncConversation();
     if(usageDashboard){
       const available=Boolean(data.usage);hidden($('usage-entry'),!available);
-      text('usage-today',compact(data.usage?.todayTokens));text('usage-month',compact(data.usage?.monthTokens));usageDashboard.update(data.usage);
+      text('usage-today',compact(data.usage?.todayTokens));
+      text('usage-week',compact(data.usage?.weekTokens));
+      text('usage-month',compact(data.usage?.monthTokens));
+      usageDashboard.update(data.usage);
     }
     if(groupMenu)return;
     const groups=data.groups||[],model=composer?.model?.getAttribute('aria-label')||composer?.model?.textContent||data.speed?.model||'';
@@ -621,8 +677,8 @@ module.exports = function installAgPulseInlineWidget() {
       for(const option of menu.children)attribute(option,'aria-selected',option.dataset.group===group?.id);
     }
     const speed=data.speed;
-    hidden(root.querySelector('[data-card="speed"]'),!lastConversation&&!surface?.showEmpty);
-    hidden(root.querySelector('[data-card="cache"]'),!lastConversation&&!surface?.showEmpty&&!data.usage);
+    hidden(root.querySelector('[data-card="speed"]'),true);
+    hidden(root.querySelector('[data-card="cache"]'),true);
     const context=speed?.context, hasCapacity=typeof context?.usedFraction==='number';
     hidden(root.querySelector('[data-card="context"]'),false);
     const empty=surface?.conversationState?.(composer).status==='new'&&!lastConversation&&data.connection==='live';
@@ -631,56 +687,42 @@ module.exports = function installAgPulseInlineWidget() {
     text('context-summary',hasCapacity?t('contextUsed',{used:Math.round(context.usedFraction*100),remaining:Math.round(context.remainingFraction*100)}):t(empty?'waitingRequest':'contextUnknown'));
     text('context-tokens',context?t('contextTokens',{used:compact(context.usedTokens),max:context.maxTokens===null?'—':compact(context.maxTokens)}):'—');
     text('context-model',context?.model||'—');
-    text('context-host-limit',context?.maxTokens?`${count(context.maxTokens)} tok`:t('contextLimitUnknown'));
-    hidden($('context-provider-row'),!context?.providerCapacityLabel);
-    text('context-provider-limit',context?.providerCapacityLabel?`${context.providerCapacityLabel} tok`:'—');
-    attribute($('context-provider-limit'),'title',t('contextReferenceBasis'));
-    text('context-compaction-limit',context?.compressionLimit?`${count(context.compressionLimit)} tok`:t('contextLimitUnknown'));
+
+    // Cache metrics integrated into the bar and card
+    const cache=speed?.cache;
+    const tokens=speed?.tokens || cache;
+    const hitRateVal=pct(cache?.hitRate);
+    text('bar-cache-rate',hitRateVal);
+    text('card-cache-hit-rate',hitRateVal);
+    const cachedTokens=tokens?.cachedTokens ?? tokens?.cacheRead;
+    const uncachedTokens=tokens?.uncachedTokens ?? tokens?.cacheMiss;
+    text('card-cache-read',typeof cachedTokens==='number'?`${compact(cachedTokens)} tok (${count(cachedTokens)})`:'—');
+    text('card-cache-miss',typeof uncachedTokens==='number'?`${compact(uncachedTokens)} tok (${count(uncachedTokens)})`:'—');
+
+    // Context Breakdown (CLI style)
     const transcript=speed?.transcriptStats,transcriptAvailable=transcript&&['ready','partial'].includes(transcript.status);
-    hidden($('transcript-details'),!transcript);
-    attribute($('transcript-details'),'title',t('transcriptBasis'));
-    text('transcript-total',transcriptAvailable?`${compact(transcript.totalTokens)} tok${transcript.complete?'':' · '+t('transcriptPartial')}${speed.transcriptRestoredFromHistory?' · '+t('transcriptSaved'):''}`:t(transcript?.status==='loading'?'transcriptLoading':'transcriptUnavailable'));
-    for(const [id,key] of [['user','userTokens'],['assistant','assistantTokens'],['tool','toolTokens'],['system','systemTokens'],['markers','compactionMarkers'],['images','imageSteps']])text('transcript-'+id,transcriptAvailable?count(transcript[key]):'—');
+    const maxTokens=context?.maxTokens||(context?.usedTokens?Math.max(context.usedTokens,256000):256000);
+    const userTok=transcriptAvailable?(transcript.userTokens||0):0;
+    const agentTok=transcriptAvailable?(transcript.assistantTokens||0):0;
+    const toolTok=transcriptAvailable?(transcript.toolTokens||0):0;
+    const systemTok=transcriptAvailable?(transcript.systemTokens||0):0;
+    const effectiveUsed=typeof context?.usedTokens==='number'?context.usedTokens:(userTok+agentTok+toolTok+systemTok);
+    const freeTok=Math.max(0,maxTokens-effectiveUsed);
+
+    text('bd-user',transcriptAvailable?`${compact(userTok)} tok (${(userTok/maxTokens*100).toFixed(1)}%)`:'—');
+    text('bd-agent',transcriptAvailable?`${compact(agentTok)} tok (${(agentTok/maxTokens*100).toFixed(1)}%)`:'—');
+    text('bd-tool',transcriptAvailable?`${compact(toolTok)} tok (${(toolTok/maxTokens*100).toFixed(1)}%)`:'—');
+    text('bd-system',transcriptAvailable?`${compact(systemTok)} tok (${(systemTok/maxTokens*100).toFixed(1)}%)`:'—');
+    text('bd-free',hasCapacity?`${compact(freeTok)} tok (${(freeTok/maxTokens*100).toFixed(1)}%)`:'—');
+
+    // Multi-segment track
+    style($('seg-user'),'width',`${Math.min(100,(userTok/maxTokens)*100)}%`);
+    style($('seg-agent'),'width',`${Math.min(100,(agentTok/maxTokens)*100)}%`);
+    style($('seg-tool'),'width',`${Math.min(100,(toolTok/maxTokens)*100)}%`);
+    style($('seg-system'),'width',`${Math.min(100,(systemTok/maxTokens)*100)}%`);
+
     const restored=context&&(speed.contextRestored===true||speed.restoredFromHistory&&speed.contextRestored!==false);
     text('context-note',(context?t('contextBasis'):t(empty?'newConversationStats':'contextUnavailable'))+(restored?' '+t('contextSaved',{time:speed.savedAt?language.resetDate(speed.savedAt):'—'}):'')+(hasCapacity&&context.usedFraction>1?' '+t('contextExceeded'):''));
-    style($('context-fill'),'width',hasCapacity?`${Math.min(1,context.usedFraction)*100}%`:'0%');
-    style($('context-fill'),'background',hasCapacity&&context.usedFraction>=.9?'var(--pulse-danger)':'');
-    attribute($('context-track'),'aria-valuenow',hasCapacity?Math.min(100,context.usedFraction*100):null);attribute($('context-track'),'aria-valuemin','0');attribute($('context-track'),'aria-valuemax','100');
-    text('tps',rate(speed?.tps));text('rounds',speed?t('rounds',{rounds:speed.rounds,steps:speed.steps}):'');
-    text('samples',speed?t('sample',{rounds:speed.rounds,steps:speed.steps,requests:speed.measuredRequests}):t('waitingRequest'));text('model-time',seconds(speed?.modelSeconds));text('tool-time',seconds(speed?.toolSeconds));text('ttft',seconds(speed?.ttftSeconds));text('session-rate',`${rate(speed?.tps)} tok/s`);text('latest-rate',`${rate(speed?.latestTps)} tok/s`);text('tokens',speed?`${count(speed.counts.responseOutput)} / ${count(speed.counts.thinkingOutput)} tok`:'—');
-    if(speed?.latestRateStatus==='unreliable')text('latest-rate',t('timingUnreliable'));
-    if(speed?.latestRateStatus==='legacy'){text('latest-rate',t('ratePending'));text('session-rate',t('ratePending'));}
-    const savedNote=speed?.restoredFromHistory?' '+t('savedStats',{time:speed.savedAt?language.resetDate(speed.savedAt):'—'}):'';
-    const saveWarning=data.persistenceError?' '+t('saveFailed'):'';
-    text('rate-note',[language.errorMessage(data.error||data.sessionError),language.rateNote(speed)].filter(Boolean).join(' ')+savedNote+saveWarning);
-    const cache=speed?.cache;
-    text('cache-rate',pct(cache?.hitRate));text('cache-detail-rate',pct(cache?.hitRate));
-    const tokens=speed?.tokens || cache;
-    const partial=tokens?.measuredRequests&&tokens.complete===false;
-    const prefix=partial?'≥ ':'';
-    const hasTotal=tokens?.measuredRequests&&Number.isSafeInteger(tokens.totalTokens)&&tokens.totalTokens>=0;
-    text('cache-total',hasTotal?`${prefix}${compact(tokens.totalTokens)} tok`:'— tok');
-    text('cache-coverage',hasTotal?`${prefix}${count(tokens.totalTokens)} tok`:'— tok');
-    const inputCoverage={uncachedTokens:'uncachedRequests',cachedTokens:'cachedRequests',cacheWriteTokens:'cacheWriteRequests'};
-    for(const [field,id]of[['cachedTokens','cache-read'],['uncachedTokens','cache-miss'],['cacheWriteTokens','cache-write'],['outputTokens','cache-output']]) {
-      const available=field==='outputTokens'?(tokens?.outputAvailable??(tokens?.outputRequests??tokens?.measuredRequests)):(tokens?.[inputCoverage[field]]??tokens?.inputRequests??tokens?.measuredRequests);
-      const missing=field==='outputTokens'?tokens?.missingOutputRequests||tokens?.coverageUnknown:
-        (tokens?.[inputCoverage[field]]!=null?tokens[inputCoverage[field]]<(speed?.requests||0):tokens?.missingInputRequests);
-      const known=Number.isSafeInteger(tokens?.[field])&&tokens[field]>=0;
-      text(id,available&&known?`${missing?'≥ ':''}${count(tokens[field])} tok`:'—');
-    }
-    hidden($('cache-write-row'),!(tokens?.cacheWriteTokens>0));
-    const cacheSaved=speed?.cacheRestoredFromHistory?' '+t('savedCache',{time:speed.cacheSavedAt?language.resetDate(speed.cacheSavedAt):'—'}):'';
-    const tokenPartial=partial&&speed?.tokens?' '+(tokens.coverageUnknown?t('tokenLegacy'):t('tokenPartial',{input:tokens.missingInputRequests??t('unknownCoverage'),output:tokens.missingOutputRequests??t('unknownCoverage')})):'';
-    const coverage=cache?.missingRequests?' '+(speed?.tokens?t('cacheCoverage',{measured:cache.measuredRequests,total:cache.measuredRequests+cache.missingRequests}):t('cacheMissing',{n:cache.missingRequests})):'';
-    const zeroInput=cache?.measuredRequests&&cache.inputTokens===0?' '+t('cacheZeroInput'):'';
-    text('cache-note',(cache?.measuredRequests?t('cacheBasis')+coverage+zeroInput:t(empty?'newConversationStats':'cacheUnavailable'))+tokenPartial+cacheSaved+savedNote+saveWarning);
-    for(const [window,name]of[['5h','five'],['weekly','week']]){
-      const b=group?.windows?.[window];text(name,pct(b?.remaining));text(`${name}-balance`,pct(b?.remaining));text(`${name}-reset`,date(b?.resetAt));
-      style($(`${name}-fill`),'width',typeof b?.remaining==='number'?`${b.remaining*100}%`:'0%');style($(`${name}-fill`),'background',b?.remaining<.05?'var(--pulse-danger)':b?.remaining<.2?'var(--pulse-warning)':'');
-      attribute($(`${name}-track`),'aria-valuenow',typeof b?.remaining==='number'?b.remaining*100:null);attribute($(`${name}-track`),'aria-valuemin','0');attribute($(`${name}-track`),'aria-valuemax','100');
-      text(`${name}-note`,(composer?.kind==='subagent'?t('accountQuota')+' ':'')+(language.errorMessage(data.error)||(b?.disabled?t('disabledQuota'):!b?.available?t('noQuota'):t('sharedQuota')+' '+t('updated',{time:data.quotaUpdatedAt?new Date(data.quotaUpdatedAt).toLocaleTimeString(language.language,{hour12:false}):'—'}))));
-    }
     attribute($('dot'),'class',`dot ${data.connection}`);attribute($('dot'),'title',t(data.connection==='live'?'live':data.connection==='stale'?'stale':'offline'));tick();fit();position();
   }
   function tick(){
