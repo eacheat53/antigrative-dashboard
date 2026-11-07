@@ -700,26 +700,67 @@ module.exports = function installAgPulseInlineWidget() {
     text('card-cache-miss',typeof uncachedTokens==='number'?`${compact(uncachedTokens)} tok (${count(uncachedTokens)})`:'—');
 
     // Context Breakdown (CLI style)
-    const transcript=speed?.transcriptStats,transcriptAvailable=transcript&&['ready','partial'].includes(transcript.status);
+    const transcript=speed?.transcriptStats;
+    const transcriptAvailable=transcript&&['ready','partial'].includes(transcript.status);
     const maxTokens=context?.maxTokens||(context?.usedTokens?Math.max(context.usedTokens,256000):256000);
-    const userTok=transcriptAvailable?(transcript.userTokens||0):0;
-    const agentTok=transcriptAvailable?(transcript.assistantTokens||0):0;
-    const toolTok=transcriptAvailable?(transcript.toolTokens||0):0;
-    const systemTok=transcriptAvailable?(transcript.systemTokens||0):0;
-    const effectiveUsed=typeof context?.usedTokens==='number'?context.usedTokens:(userTok+agentTok+toolTok+systemTok);
+
+    const hasUsedTokens=typeof context?.usedTokens==='number';
+    const rawUser=transcriptAvailable?(transcript.userTokens||0):0;
+    const rawAgent=transcriptAvailable?(transcript.assistantTokens||0):0;
+    const rawTool=transcriptAvailable?(transcript.toolTokens||0):0;
+    const rawSystem=transcriptAvailable?(transcript.systemTokens||0):0;
+    const rawTotal=rawUser+rawAgent+rawTool+rawSystem;
+
+    let userTok=0,agentTok=0,toolTok=0,systemTok=0;
+    let effectiveUsed=0;
+
+    if(hasUsedTokens){
+      effectiveUsed=context.usedTokens;
+      if(rawTotal>0&&effectiveUsed>0){
+        // Proportional normalization: guarantee subcategories strictly partition host-reported usedTokens
+        userTok=Math.round((rawUser/rawTotal)*effectiveUsed);
+        agentTok=Math.round((rawAgent/rawTotal)*effectiveUsed);
+        toolTok=Math.round((rawTool/rawTotal)*effectiveUsed);
+        systemTok=Math.max(0,effectiveUsed-userTok-agentTok-toolTok);
+      }else if(effectiveUsed>0){
+        systemTok=effectiveUsed;
+      }
+    }else{
+      effectiveUsed=rawTotal;
+      userTok=rawUser;
+      agentTok=rawAgent;
+      toolTok=rawTool;
+      systemTok=rawSystem;
+    }
+
     const freeTok=Math.max(0,maxTokens-effectiveUsed);
 
-    text('bd-user',transcriptAvailable?`${compact(userTok)} tok (${(userTok/maxTokens*100).toFixed(1)}%)`:'—');
-    text('bd-agent',transcriptAvailable?`${compact(agentTok)} tok (${(agentTok/maxTokens*100).toFixed(1)}%)`:'—');
-    text('bd-tool',transcriptAvailable?`${compact(toolTok)} tok (${(toolTok/maxTokens*100).toFixed(1)}%)`:'—');
-    text('bd-system',transcriptAvailable?`${compact(systemTok)} tok (${(systemTok/maxTokens*100).toFixed(1)}%)`:'—');
-    text('bd-free',hasCapacity?`${compact(freeTok)} tok (${(freeTok/maxTokens*100).toFixed(1)}%)`:'—');
+    // Percentages strictly calculated against maxTokens so all categories + free space sum to 100%
+    const pctUser=maxTokens>0?(userTok/maxTokens)*100:0;
+    const pctAgent=maxTokens>0?(agentTok/maxTokens)*100:0;
+    const pctTool=maxTokens>0?(toolTok/maxTokens)*100:0;
+    const pctSystem=maxTokens>0?(systemTok/maxTokens)*100:0;
+    const pctFree=maxTokens>0?(freeTok/maxTokens)*100:0;
 
-    // Multi-segment track
-    style($('seg-user'),'width',`${Math.min(100,(userTok/maxTokens)*100)}%`);
-    style($('seg-agent'),'width',`${Math.min(100,(agentTok/maxTokens)*100)}%`);
-    style($('seg-tool'),'width',`${Math.min(100,(toolTok/maxTokens)*100)}%`);
-    style($('seg-system'),'width',`${Math.min(100,(systemTok/maxTokens)*100)}%`);
+    const showBd=transcriptAvailable||(hasUsedTokens&&effectiveUsed>0);
+    text('bd-user',showBd?`${compact(userTok)} tok (${pctUser.toFixed(1)}%)`:'—');
+    text('bd-agent',showBd?`${compact(agentTok)} tok (${pctAgent.toFixed(1)}%)`:'—');
+    text('bd-tool',showBd?`${compact(toolTok)} tok (${pctTool.toFixed(1)}%)`:'—');
+    text('bd-system',showBd?`${compact(systemTok)} tok (${pctSystem.toFixed(1)}%)`:'—');
+    text('bd-free',hasCapacity?`${compact(freeTok)} tok (${pctFree.toFixed(1)}%)`:'—');
+
+    // Multi-segment track: widths strictly equal subcategory percentages, sum strictly equals used fraction
+    const setSeg=(id,pct,label,tok)=>{
+      const el=$(id);
+      if(!el)return;
+      style(el,'width',`${Math.min(100,pct)}%`);
+      style(el,'display',pct>0.04?'block':'none');
+      el.title=`${label}: ${compact(tok)} tok (${pct.toFixed(1)}%)`;
+    };
+    setSeg('seg-user',pctUser,t('transcriptUser')||'User text',userTok);
+    setSeg('seg-agent',pctAgent,t('transcriptAssistant')||'Replies + thinking',agentTok);
+    setSeg('seg-tool',pctTool,t('transcriptTool')||'Tool output',toolTok);
+    setSeg('seg-system',pctSystem,t('transcriptSystem')||'System text',systemTok);
 
     const restored=context&&(speed.contextRestored===true||speed.restoredFromHistory&&speed.contextRestored!==false);
     text('context-note',(context?t('contextBasis'):t(empty?'newConversationStats':'contextUnavailable'))+(restored?' '+t('contextSaved',{time:speed.savedAt?language.resetDate(speed.savedAt):'—'}):'')+(hasCapacity&&context.usedFraction>1?' '+t('contextExceeded'):''));
