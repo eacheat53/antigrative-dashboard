@@ -308,7 +308,8 @@ module.exports = function installAgPulseInlineWidget() {
   // the pointer departs. Only keyboard-visible focus keeps a card engaged.
   // The explicit first-use action moves focus into language choices. Keep
   // that guided destination available until the user chooses or leaves it.
-  const cardEngaged=()=>Boolean(root?.activeElement?.matches(':focus-visible')||(guideOpened&&!guideDismissed&&cardName==='context'&&root?.activeElement?.matches('[data-language-choice]'))||groupMenu||node?.matches(':hover')||root?.querySelector('.card:not([hidden]):hover'));
+  let lastBadgeClick=0;
+  const cardEngaged=()=>Boolean((Date.now()-lastBadgeClick<2500)||root?.activeElement?.matches(':focus-visible')||(guideOpened&&!guideDismissed&&cardName==='context'&&root?.activeElement?.matches('[data-language-choice]'))||groupMenu||node?.matches(':hover')||root?.querySelector('.card:not([hidden]):hover'));
   function cardVisibility(element,visible){
     if(visible){hidden(element,false);if(element.hasAttribute('popover')&&!element.matches(':popover-open'))element.showPopover();}
     else {if(element.hasAttribute('popover')&&element.matches(':popover-open'))element.hidePopover();hidden(element,true);}
@@ -655,13 +656,17 @@ module.exports = function installAgPulseInlineWidget() {
     });
     for(const button of root.querySelectorAll('.refresh'))button.addEventListener('click',refreshManually);
     for(const button of root.querySelectorAll('[data-language-choice]'))button.addEventListener('click',()=>{closeGroup();void preferences.choose(button.dataset.languageChoice);});
-    $('context-limit-badge')?.addEventListener('click',()=>{
-      const presets=['auto','512k','734k','256k'];
+    $('context-limit-badge')?.addEventListener('click',event=>{
+      event.stopPropagation();event.preventDefault();
+      lastBadgeClick=Date.now();
+      clearTimeout(hoverTimer);hoverTimer=null;
+      const presets=['auto','512k','734k'];
       const current=localGet('ag-pulse-context-limit')||'auto';
       const idx=presets.indexOf(current);
       const next=presets[(idx+1)%presets.length];
       localSet('ag-pulse-context-limit',next);
       render();
+      show('context');
     });
     if(window.__agPulseUsageFactory){
       const section=document.createElement('div');section.id='usage-entry';section.hidden=true;
@@ -777,28 +782,24 @@ module.exports = function installAgPulseInlineWidget() {
       if(debugLimitSetting==='auto'){
         if(hostReportedMax&&hostReportedMax!==256000){
           badge.className='context-limit-badge non-native';
-          badge.textContent=`⚡ ${compact(hostReportedMax)} (${t('contextPatched')||'已补丁'})`;
+          badge.textContent=`⚡ ${compact(hostReportedMax)}`;
           badge.title=t('contextLimitTooltipAutoNonNative',{limit:compact(hostReportedMax)});
         }else{
           badge.className='context-limit-badge native';
-          badge.textContent=`256K (${t('contextNative')||'原生'})`;
+          badge.textContent='256K';
           badge.title=t('contextLimitTooltipNative');
         }
       }else if(debugLimitSetting==='512k'){
         badge.className='context-limit-badge non-native';
-        badge.textContent=`⚡ 512K (${t('contextSweetSpot')||'甜品点'})`;
+        badge.textContent='⚡ 512K';
         badge.title=t('contextLimitTooltipOverride',{limit:'512K'});
       }else if(debugLimitSetting==='734k'){
         badge.className='context-limit-badge non-native';
-        badge.textContent=`⚡ 734K (${t('contextHigh')||'高负荷'})`;
+        badge.textContent='⚡ 734K';
         badge.title=t('contextLimitTooltipOverride',{limit:'734K'});
-      }else if(debugLimitSetting==='256k'){
-        badge.className='context-limit-badge native';
-        badge.textContent=`256K (${t('contextForcedNative')||'强制原生'})`;
-        badge.title=t('contextLimitTooltipForcedNative');
       }else{
         badge.className='context-limit-badge '+(isNonNative?'non-native':'native');
-        badge.textContent=`${compact(maxTokens)} (${isNonNative?'⚡ 非原生':'原生'})`;
+        badge.textContent=`${isNonNative?'⚡ ':''}${compact(maxTokens)}`;
         badge.title=t('contextLimitTooltipOverride',{limit:compact(maxTokens)});
       }
     }
