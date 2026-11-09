@@ -14,7 +14,10 @@
     "commands": [{"command":"antigrativeDashboard.ide.openHealth","title":"Antigrative Dashboard: Show IDE Status"}],
     "configuration": {
       "title":"Antigrative Dashboard IDE",
-      "properties":{"antigrativeDashboard.ide.enabled":{"type":"boolean","default":true,"description":"Enable the standalone Antigravity IDE composer integration. Start the IDE with the loopback debugging flags described in the README."}}
+      "properties":{
+        "antigrativeDashboard.ide.enabled":{"type":"boolean","default":true,"description":"Enable the standalone Antigravity IDE composer integration. Start the IDE with the loopback debugging flags described in the README."},
+        "antigrativeDashboard.contextLimitOverride":{"type":"string","enum":["auto","512k","734k","256k"],"enumDescriptions":["Auto (Host-reported, native 256K or patched)","512K Sweet Spot (Recommended balance between long tool logs & low latency)","734K High (Extended capacity for heavy multi-turn sessions)","256K Native (Forced native 256K baseline)"],"default":"auto","description":"Override or debug context window capacity (512K sweet spot recommended for heavy debugging sessions)."}
+      }
     }
   }
 }
