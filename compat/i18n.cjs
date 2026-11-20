@@ -158,68 +158,53 @@ module.exports = function createDashboardI18n(initialLanguage) {
   }
   function errorMessage(value){
     if(!value)return '';
-    const key=Object.keys(dictionary.en).find(key=>dictionary.en[key]===value);
+    const text=String(value);
+    const key=Object.keys(dictionary.en).find(k=>dictionary.en[k]===text||dictionary['zh-CN'][k]===text||dictionary['zh-TW'][k]===text);
     if(key)return t(key);
-    if(language==='zh-CN')return value;
-    if(language==='zh-TW'){
-      const twErrors={
-        '请先打开 Antigravity':'請先開啟 Antigravity','当前采集适配器支持 Windows':'目前收集配接器僅支援 Windows',
-        '检测到多个 Antigravity 实例，请保留一个':'偵測到多個 Antigravity 執行個體，請保留一個',
-        '未找到 Antigravity 桌面后台':'找不到 Antigravity 桌面背景程式',
-        '当前版本未提供可用的本地检测凭据':'目前版本未提供可用的本機檢測憑證',
-        '等待 Antigravity 本地接口启动':'等待 Antigravity 本機 API 啟動',
-        '未找到 Antigravity 语言服务日志，请检查日志路径':'找不到 Antigravity 語言伺服器記錄，請檢查記錄路徑',
-        '会话暂时没有可用统计':'此對話暫無可用統計資料',
-        '完整会话统计分页暂不可用':'完整對話統計分頁暫時無法取得',
-        '会话统计数据超过内存预算':'對話統計資料超出記憶體預算',
-        '会话统计数据超过采集上限':'對話統計資料超出收集上限',
-        '会话统计字段超过采集上限':'對話統計欄位超出收集上限',
-        '会话统计分页读取超时':'對話統計分頁讀取逾時',
-        '会话统计分页数量无效':'對話統計分頁數量無效',
-        '会话统计分页格式无效':'對話統計分頁格式無效',
-        '会话仍在更新，请等待下一次刷新':'對話仍在更新中，請等待下一次重新整理',
-        '接口响应超过采集上限':'API 回應超出收集上限',
-        'Antigravity 接口返回了无法解析的数据':'Antigravity API 回傳了無法解析的資料',
-        'Antigravity 本地接口超时':'Antigravity 本機 API 連線逾時',
-        '会话标识无效':'對話識別碼無效',
-        '等待 Antigrative Dashboard 后台启动':'等待 Antigrative Dashboard 背景程式啟動',
-        '等待 Antigrative Dashboard 重新连接':'等待 Antigrative Dashboard 重新連線',
-        '等待 AG Pulse 后台启动':'等待 AG Pulse 背景程式啟動',
-        '等待 AG Pulse 重新连接':'等待 AG Pulse 重新連線',
-      };
-      if(twErrors[value])return twErrors[value];
-      const match=String(value).match(/^Antigravity 接口 (\w+) 返回 (\d+)$/);
-      if(match)return `Antigravity API ${match[1]} 回傳 HTTP ${match[2]}`;
-      return t('panelUnavailable');
-    }
-    const errors={
-      '请先打开 Antigravity':'Open Antigravity to connect.', '当前采集适配器支持 Windows':'This collector requires Windows.',
-      '检测到多个 Antigravity 实例，请保留一个':'Multiple Antigravity instances detected. Keep one open.',
-      '未找到 Antigravity 桌面后台':'Antigravity desktop backend was not found.',
-      '当前版本未提供可用的本地检测凭据':'Local metrics credentials are unavailable in this version.',
-      '等待 Antigravity 本地接口启动':'Waiting for the local Antigravity API.',
-      '未找到 Antigravity 语言服务日志，请检查日志路径':'Antigravity language-server log was not found. Check the log path.',
-      '会话暂时没有可用统计':'No statistics are available for this conversation yet.',
-      '完整会话统计分页暂不可用':'Complete conversation statistics are temporarily unavailable.',
-      '会话统计数据超过内存预算':'Conversation statistics exceed the memory budget.',
-      '会话统计数据超过采集上限':'Retained conversation statistics exceed the collection budget.',
-      '会话统计字段超过采集上限':'A statistics field exceeds the collection budget.',
-      '会话统计分页读取超时':'Conversation statistics pagination timed out.',
-      '会话统计分页数量无效':'Invalid conversation statistics page count.',
-      '会话统计分页格式无效':'Invalid conversation statistics page format.',
-      '会话仍在更新，请等待下一次刷新':'The conversation is updating; waiting for the next refresh.',
-      '接口响应超过采集上限':'The API response exceeds the collection budget.',
-      'Antigravity 接口返回了无法解析的数据':'Antigravity returned an invalid response.',
-      'Antigravity 本地接口超时':'The local Antigravity API timed out.',
-      '会话标识无效':'Invalid conversation identifier.',
-      '等待 Antigrative Dashboard 后台启动':'Waiting for the dashboard background process.',
-      '等待 Antigrative Dashboard 重新连接':'Waiting for the dashboard to reconnect.',
-      '等待 AG Pulse 后台启动':'Waiting for the dashboard background process.',
-      '等待 AG Pulse 重新连接':'Waiting for the dashboard to reconnect.',
+    const known={
+      '请先打开 Antigravity':{tw:'請先開啟 Antigravity',en:'Open Antigravity to connect.'},
+      '当前采集适配器支持 Windows':{tw:'目前收集配接器僅支援 Windows',en:'This collector requires Windows.'},
+      '检测到多个 Antigravity 实例，请保留一个':{tw:'偵測到多個 Antigravity 執行個體，請保留一個',en:'Multiple Antigravity instances detected. Keep one open.'},
+      '未找到 Antigravity 桌面后台':{tw:'找不到 Antigravity 桌面背景程式',en:'Antigravity desktop backend was not found.'},
+      '读取 Antigravity 进程信息超时':{tw:'讀取 Antigravity 處理程序資訊逾時',en:'Timed out reading Antigravity process information.'},
+      '无法读取 Antigravity 进程信息':{tw:'無法讀取 Antigravity 處理程序資訊',en:'Unable to read Antigravity process information.'},
+      '当前版本未提供可用的本地检测凭据':{tw:'目前版本未提供可用的本機檢測憑證',en:'Local metrics credentials are unavailable in this version.'},
+      '等待 Antigravity 本地接口启动':{tw:'等待 Antigravity 本機 API 啟動',en:'Waiting for the local Antigravity API.'},
+      '未找到 Antigravity 语言服务日志，请检查日志路径':{tw:'找不到 Antigravity 語言伺服器記錄，請檢查記錄路徑',en:'Antigravity language-server log was not found. Check the log path.'},
+      '后台已重新连接，请等待刷新':{tw:'背景程式已重新連線，請等待重新整理',en:'Backend reconnected; waiting for refresh.'},
+      '会话暂时没有可用统计':{tw:'此對話暫無可用統計資料',en:'No statistics are available for this conversation yet.'},
+      '完整会话统计分页暂不可用':{tw:'完整對話統計分頁暫時無法取得',en:'Complete conversation statistics are temporarily unavailable.'},
+      '会话统计数据超过内存预算':{tw:'對話統計資料超出記憶體預算',en:'Conversation statistics exceed the memory budget.'},
+      '会话统计数据超过采集上限':{tw:'對話統計資料超出收集上限',en:'Retained conversation statistics exceed the collection budget.'},
+      '会话统计字段超过采集上限':{tw:'對話統計欄位超出收集上限',en:'A statistics field exceeds the collection budget.'},
+      '会话统计分页读取超时':{tw:'對話統計分頁讀取逾時',en:'Conversation statistics pagination timed out.'},
+      '会话统计分页数量无效':{tw:'對話統計分頁數量無效',en:'Invalid conversation statistics page count.'},
+      '会话统计分页格式无效':{tw:'對話統計分頁格式無效',en:'Invalid conversation statistics page format.'},
+      '会话仍在更新，请等待下一次刷新':{tw:'對話仍在更新中，請等待下一次重新整理',en:'The conversation is updating; waiting for the next refresh.'},
+      '接口响应超过采集上限':{tw:'API 回應超出收集上限',en:'The API response exceeds the collection budget.'},
+      'Antigravity 接口返回了无法解析的数据':{tw:'Antigravity API 回傳了無法解析的資料',en:'Antigravity returned an invalid response.'},
+      'Antigravity 本地接口超时':{tw:'Antigravity 本機 API 連線逾時',en:'The local Antigravity API timed out.'},
+      '会话标识无效':{tw:'對話識別碼無效',en:'Invalid conversation identifier.'},
+      '等待 Antigrative Dashboard 后台启动':{tw:'等待 Antigrative Dashboard 背景程式啟動',en:'Waiting for the dashboard background process.'},
+      '等待 Antigrative Dashboard 重新连接':{tw:'等待 Antigrative Dashboard 重新連線',en:'Waiting for the dashboard to reconnect.'},
+      '等待 AG Pulse 后台启动':{tw:'等待 AG Pulse 背景程式啟動',en:'Waiting for the dashboard background process.'},
+      '等待 AG Pulse 重新连接':{tw:'等待 AG Pulse 重新連線',en:'Waiting for the dashboard to reconnect.'},
     };
-    if(errors[value])return errors[value];
-    const match=String(value).match(/^Antigravity 接口 (\w+) 返回 (\d+)$/);
-    return match?`Antigravity ${match[1]} returned HTTP ${match[2]}.`:'Statistics are temporarily unavailable.';
+    const ideKnown={
+      'Timed out reading Antigravity IDE processes':{zh:'读取 Antigravity IDE 进程信息超时',tw:'讀取 Antigravity IDE 處理程序資訊逾時',en:'Timed out reading Antigravity IDE processes.'},
+      'Unable to read Antigravity IDE processes':{zh:'无法读取 Antigravity IDE 进程信息',tw:'無法讀取 Antigravity IDE 處理程序資訊',en:'Unable to read Antigravity IDE processes.'},
+      'Waiting for Antigravity IDE processes':{zh:'等待 Antigravity IDE 进程启动',tw:'等待 Antigravity IDE 處理程序啟動',en:'Waiting for Antigravity IDE processes.'},
+      'Waiting for the IDE main language server':{zh:'等待 Antigravity IDE 语言服务启动',tw:'等待 Antigravity IDE 語言伺服器啟動',en:'Waiting for the IDE main language server.'},
+      'Waiting for the IDE local API port':{zh:'等待 Antigravity IDE 本地接口启动',tw:'等待 Antigravity IDE 本機 API 啟動',en:'Waiting for the IDE local API port.'},
+      'IDE local API credential unavailable':{zh:'当前 IDE 版本未提供可用的本地检测凭据',tw:'目前 IDE 版本未提供可用的本機檢測憑證',en:'IDE local API credential unavailable.'},
+      'IDE renderer port does not belong to Antigravity IDE':{zh:'当前调试端口不属于 Antigravity IDE',tw:'目前偵錯連接埠不屬於 Antigravity IDE',en:'IDE renderer port does not belong to Antigravity IDE.'},
+      'Multiple Antigravity IDE instances own the renderer port':{zh:'检测到多个 Antigravity IDE 实例共用同一端口',tw:'偵測到多個 Antigravity IDE 執行個體共用同一連接埠',en:'Multiple Antigravity IDE instances own the renderer port.'},
+    };
+    if(known[text])return language==='zh-CN'?text:language==='zh-TW'?known[text].tw:known[text].en;
+    if(ideKnown[text])return language==='zh-CN'?ideKnown[text].zh:language==='zh-TW'?ideKnown[text].tw:ideKnown[text].en;
+    const match=text.match(/^Antigravity 接口 (\w+) 返回 (\d+)$/);
+    if(match)return language==='zh-CN'?text:language==='zh-TW'?`Antigravity API ${match[1]} 回傳 HTTP ${match[2]}`:`Antigravity ${match[1]} returned HTTP ${match[2]}.`;
+    return language==='en'?'Statistics are temporarily unavailable.':t('panelUnavailable');
   }
   function connectPreferences({read,write,cache=()=>{},changed=()=>{}}) {
     let epoch=0,writes=0,revision=-1,disposed=false,error=false,queue=Promise.resolve();

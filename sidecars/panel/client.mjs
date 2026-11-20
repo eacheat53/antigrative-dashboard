@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises';
 import { request } from 'node:http';
 import {setImmediate as yieldStream} from 'node:timers/promises';
 import { platformPaths } from '../../compat/platform.mjs';
-import { discoverProcesses,httpLogPorts,readLogTail } from './discovery.mjs';
+import { discoverProcesses,httpLogPorts,readLogTail,probeLoopbackPort,isProcessAlive } from './discovery.mjs';
 import { TrajectoryJson } from './trajectory-json.mjs';
 import { TrajectoryReader } from './trajectory-reader.mjs';
 
@@ -19,8 +19,8 @@ function serverFromPorts(logPorts, processes) {
 }
 export function serverFromDiscovery(log, processes) { return serverFromPorts(httpLogPorts(log),processes); }
 export class AntigravityClient {
-  constructor({paths=platformPaths,readLog=readLogTail,logStat=stat,processes=discoverProcesses,now=Date.now,onRpc=null}={}) {
-    this.paths=paths;this.readLog=readLog;this.logStat=logStat;this.processes=processes;this.now=now;this.onRpc=onRpc;this.reader=new TrajectoryReader(this);
+  constructor({paths=platformPaths,readLog=readLogTail,logStat=stat,processes=discoverProcesses,probe=probeLoopbackPort,pidAlive=isProcessAlive,now=Date.now,onRpc=null}={}) {
+    this.paths=paths;this.readLog=readLog;this.logStat=logStat;this.processes=processes;this.probe=probe;this.pidAlive=pidAlive;this.now=now;this.onRpc=onRpc;this.reader=new TrajectoryReader(this);
   }
   server = null;
   discoveredAt = 0;
@@ -30,14 +30,29 @@ export class AntigravityClient {
   discoveryFailures = 0;
   discoveryError = null;
 
+  async verifyCachedServer(server) {
+    if (!server || !this.pidAlive(server.pid)) return false;
+    return await this.probe(server.port, { timeoutMs: 400 }).catch(() => false);
+  }
+
   async discover(force = false) {
     if (!force && this.server && this.now() - this.discoveredAt < 15000) return this.server;
     if (this.discovering) return this.discovering;
     if (!force && this.discoveryError && this.now() < this.retryAt) throw this.discoveryError;
-    this.lastScanAt=this.now();
-    this.discovering = this.discoverNow().then(server=>{
-      this.discoveredAt=this.now();this.discoveryFailures=0;this.discoveryError=null;this.retryAt=0;return server;
-    }).catch(error=>{
+    const cached = !force ? this.server : null;
+    this.discovering = (async () => {
+      if (cached && await this.verifyCachedServer(cached) && this.server === cached) {
+        this.discoveredAt = this.now();
+        return cached;
+      }
+      this.lastScanAt = this.now();
+      const server = await this.discoverNow();
+      this.discoveredAt = this.now();
+      this.discoveryFailures = 0;
+      this.discoveryError = null;
+      this.retryAt = 0;
+      return server;
+    })().catch(error=>{
       this.discoveryError=error;this.discoveryFailures++;
       this.retryAt=this.now()+Math.min(30000,3000*2**Math.min(4,this.discoveryFailures-1));throw error;
     }).finally(() => { this.discovering = null; });

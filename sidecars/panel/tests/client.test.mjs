@@ -138,3 +138,31 @@ test('readLogTail extracts newest HTTP port from >1 MiB logs both at tail and be
  await writeFile(headFile,'listening on random port at 3333 for HTTP\n'+'y'.repeat(700*1024)+'\n');
  assert.deepEqual(httpLogPorts(await readLogTail(headFile,'utf8')),[3333]);
 });
+
+test('idle lease expiry verifies live PID and loopback port without spawning PowerShell scans',async t=>{
+ let scans=0,now=0,alive=true,probes=0;
+ const server=createServer((req,res)=>{req.resume();res.end('{}');});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>stopServer(server));
+ const port=server.address().port,pid=process.pid;
+ const client=new AntigravityClient({
+  now:()=>now,
+  paths:()=>({log:'fixture'}),
+  readLog:async()=>`listening on random port at ${port} for HTTP\n`,
+  processes:async()=>{scans++;return [{ProcessId:pid,CommandLine:'language_server --standalone --csrf_token=fixture',Ports:[port]}];},
+  pidAlive:value=>value===pid&&alive,
+  probe:async(p,options)=>{probes++;return p===port&&options.timeoutMs<=400;},
+ });
+ assert.equal((await client.discover()).port,port);assert.equal(scans,1);assert.equal(probes,0);
+ // Idle for 25s (>15s lease): liveness check renews lease without running processes().
+ now=25000;
+ assert.equal((await client.discover()).port,port);assert.equal(scans,1);assert.equal(probes,1);
+ // Subsequent call inside the renewed 15s window needs neither probe nor scan.
+ now=35000;
+ assert.equal((await client.discover()).port,port);assert.equal(scans,1);assert.equal(probes,1);
+ // When the cached PID exits, discovery immediately falls back to a full process scan.
+ alive=false;now=60000;
+ assert.equal((await client.discover()).port,port);assert.equal(scans,2);assert.equal(probes,1);
+ // Explicit force=true always runs a full process scan.
+ alive=true;now=61000;
+ assert.equal((await client.discover(true)).port,port);assert.equal(scans,3);
+});

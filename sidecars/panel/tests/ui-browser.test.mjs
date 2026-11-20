@@ -171,8 +171,10 @@ test('font sync, scope switching and quota window reference render end-to-end in
       },
     };
   };
+  let staleError = null;
   const metricsPayload = (overrideScope = null) => ({
-    connection: 'live',
+    connection: staleError ? 'stale' : 'live',
+    ...(staleError ? { error: staleError } : {}),
     theme: panelTheme,
     preferences: prefs,
     serverTime: new Date().toISOString(),
@@ -609,6 +611,34 @@ test('font sync, scope switching and quota window reference render end-to-end in
   await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('week-usage-value').textContent === '129.9M toks (約 216.2M 滿額)'`, 'zh-TW quota window label');
   await evalJs(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('card-language-zh').click()`);
   await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('week-usage-value').textContent === '129.9M toks (约 216.2M 满额)'`, 'restore zh-CN');
+
+  // Verify stale/discovery errors render sanitized and once in #quota-error (never duplicated in five-note/week-note)
+  staleError = 'Command failed: powershell.exe -NoProfile -NonInteractive -Command Get-CimInstance Win32_Process';
+  await waitUntil(`() => {
+    const sr = document.getElementById('ag-pulse-status-bar').shadowRoot;
+    return !sr.getElementById('quota-error').hidden && sr.getElementById('quota-error').textContent === '统计面板暂时无法连接';
+  }`, 'sanitized raw command error shown once in #quota-error');
+  const errorLayout = await evalJs(`() => {
+    const sr = document.getElementById('ag-pulse-status-bar').shadowRoot;
+    return {
+      quotaError: sr.getElementById('quota-error').textContent,
+      fiveNoteHidden: sr.getElementById('five-note').hidden,
+      fiveNoteText: sr.getElementById('five-note').textContent,
+      weekNoteHidden: sr.getElementById('week-note').hidden,
+      weekNoteText: sr.getElementById('week-note').textContent,
+    };
+  }`);
+  assert.deepEqual(errorLayout, {
+    quotaError: '统计面板暂时无法连接',
+    fiveNoteHidden: true,
+    fiveNoteText: '',
+    weekNoteHidden: true,
+    weekNoteText: '',
+  });
+  staleError = '读取 Antigravity 进程信息超时';
+  await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('quota-error').textContent === '读取 Antigravity 进程信息超时'`, 'discovery timeout message rendered in #quota-error');
+  staleError = null;
+  await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('quota-error').hidden`, 'quota-error hides once recovered');
 
   // 2. Navigate to Sidecar Panel and verify Fira Code font sync + compact quota height + toks cache card
   signedIn = true;

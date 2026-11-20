@@ -92,6 +92,15 @@ export function parseProcNet(text) {
 
 const validPid = value => Number.isSafeInteger(value) && value > 0 && value <= 0xffffffff;
 const validPort = value => Number.isInteger(value) && value > 0 && value <= 65535;
+export function isProcessAlive(pid) {
+  if (!validPid(pid)) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code === 'EPERM'; }
+}
+export function discoveryCommandError(error, { timedOut = '读取 Antigravity 进程信息超时', failed = '无法读取 Antigravity 进程信息' } = {}) {
+  const isTimeout = Boolean(error?.killed || error?.code === 'ETIMEDOUT' || error?.signal === 'SIGTERM');
+  return new Error(isTimeout ? timedOut : failed);
+}
 const address = value => typeof value === 'string' ? value.toLowerCase().replace(/^\[|\]$/g,'') : '';
 const localAddress = value => ['127.0.0.1','0.0.0.0','::1','::','0:0:0:0:0:0:0:1','0:0:0:0:0:0:0:0','localhost'].includes(address(value));
 const unspecifiedAddress = value => ['0.0.0.0','::','0:0:0:0:0:0:0:0','*'].includes(address(value));
@@ -232,8 +241,18 @@ export async function linuxPorts(pid, { proc = '/proc' } = {}) {
 export async function discoverProcesses({ platform = process.platform, run = exec, uid = process.getuid?.(), proc = '/proc', expectedPorts = [] } = {}) {
   if (platform === 'win32') {
     const script = "Get-CimInstance Win32_Process -Filter \"Name='language_server.exe'\" | Where-Object { $_.CommandLine -match '(?:^|\\s)--standalone(?:\\s|=|$)' } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress";
-    const {stdout}=await run('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:8000,maxBuffer:1048576});
-    const parsed=stdout.trim()?JSON.parse(stdout.replace(/^\uFEFF/,'')):[];
+    let stdout;
+    try {
+      ({ stdout } = await run('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:8000,maxBuffer:1048576}));
+    } catch (error) {
+      throw discoveryCommandError(error);
+    }
+    let parsed;
+    try {
+      parsed=stdout.trim()?JSON.parse(stdout.replace(/^\uFEFF/,'')):[];
+    } catch {
+      throw new Error('无法读取 Antigravity 进程信息');
+    }
     const rows=(Array.isArray(parsed)?parsed:[parsed]).filter(row=>Number.isSafeInteger(row?.ProcessId)&&row.ProcessId>0&&/(?:^|\s)--standalone(?:\s|=|$)/.test(row.CommandLine||''));
     if(!rows.length)return [];
     const ports=await discoverWindowsPorts(rows.map(row=>row.ProcessId),{run,
@@ -241,10 +260,15 @@ export async function discoverProcesses({ platform = process.platform, run = exe
     return rows.map(row=>({...row,Ports:ports.get(row.ProcessId)||[]}));
   }
   if (platform === 'darwin') {
-    const {stdout}=await run('/bin/ps',['-ww','-axo','pid=,uid=,args='],{timeout:8000,maxBuffer:4194304});
+    let stdout;
+    try {
+      ({ stdout } = await run('/bin/ps',['-ww','-axo','pid=,uid=,args='],{timeout:8000,maxBuffer:4194304}));
+    } catch (error) {
+      throw discoveryCommandError(error);
+    }
     const rows=parsePs(stdout,uid);
     if(!rows.length)return [];
-    const {stdout:sockets}=await run('/usr/sbin/lsof',['-nP','-a','-p',rows.map(r=>r.ProcessId).join(','),'-iTCP','-sTCP:LISTEN','-Fpn'],{timeout:8000,maxBuffer:1048576}).catch(error=>{if(error.code===1)return {stdout:error.stdout||''};throw error;});
+    const {stdout:sockets}=await run('/usr/sbin/lsof',['-nP','-a','-p',rows.map(r=>r.ProcessId).join(','),'-iTCP','-sTCP:LISTEN','-Fpn'],{timeout:8000,maxBuffer:1048576}).catch(error=>{if(error.code===1)return {stdout:error.stdout||''};throw discoveryCommandError(error);});
     const ports=parseLsof(sockets);
     return rows.map(row=>({...row,Ports:ports.get(row.ProcessId)||[]}));
   }
