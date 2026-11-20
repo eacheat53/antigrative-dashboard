@@ -109,6 +109,24 @@ test('parseLnkBuffer, shortcut filter and argument merging match Desktop shortcu
   assert.equal(isAntigravityDesktopShortcut('C:\\Users\\demo\\Desktop\\Antigravity IDE - Dashboard Preview.lnk', {
     target: 'C:\\Tools\\AntigravityProxy.exe', args: '--ide', icon: 'D:\\IDE\\Antigravity IDE.exe',
   }), false);
+  assert.equal(isAntigravityDesktopShortcut('C:\\Users\\demo\\Desktop\\Antigravity (代理).lnk', {
+    target: 'C:\\Users\\demo\\.antigravity-proxy\\AntigravityLauncher.exe', args: '', icon: 'C:\\Apps\\Antigravity.exe',
+  }), true);
+  assert.equal(isAntigravityDesktopShortcut('C:\\Users\\demo\\Desktop\\Antigravity (Proxy).lnk', {
+    target: 'C:\\Users\\demo\\.antigravity-proxy\\AntigravityLauncher.exe', args: '', icon: 'C:\\Apps\\Antigravity.exe,0',
+  }), true);
+  assert.equal(isAntigravityDesktopShortcut('C:\\Users\\demo\\Desktop\\Antigravity (Прокси).lnk', {
+    target: 'C:\\Users\\demo\\.antigravity-proxy\\AntigravityLauncher.exe', args: '', icon: '',
+  }), true);
+  assert.equal(isAntigravityDesktopShortcut('C:\\Users\\demo\\Desktop\\Antigravity (代理).lnk', {
+    target: 'C:\\Users\\demo\\.antigravity-proxy\\AntigravityLauncher.exe', args: '', icon: 'D:\\IDE\\Antigravity IDE.exe',
+  }), false);
+  assert.equal(isAntigravityDesktopShortcut('C:\\Users\\demo\\Desktop\\Antigravity (Proxy).lnk', {
+    target: 'C:\\Users\\demo\\.antigravity-proxy\\AntigravityLauncher.exe', args: '--ide', icon: 'C:\\Apps\\Antigravity.exe',
+  }), false);
+  assert.equal(isAntigravityDesktopShortcut('C:\\Users\\demo\\Desktop\\Unrelated.lnk', {
+    target: 'C:\\Users\\demo\\.antigravity-proxy\\AntigravityLauncher.exe', args: '', icon: '',
+  }), false);
 
   const merged = mergeDebugArguments('--foo -- bar');
   assert.deepEqual(merged.added, ['--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1']);

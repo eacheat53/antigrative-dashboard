@@ -108,6 +108,32 @@ class LaunchConfigTests(unittest.TestCase):
             self.assertFalse(lc.is_antigravity_desktop_shortcut(ide_proxy, ide_info))
             self.assertFalse(lc.is_antigravity_desktop_shortcut(root / 'IDE.lnk', {'target': r'D:\Antigravity IDE\Antigravity IDE.exe', 'args': ''}))
 
+            launcher_target = r'C:\Users\demo\.antigravity-proxy\AntigravityLauncher.exe'
+            self.assertTrue(lc.is_antigravity_desktop_shortcut(
+                root / 'Antigravity (代理).lnk',
+                {'target': launcher_target, 'args': '', 'icon': r'C:\Apps\Antigravity.exe'},
+            ))
+            self.assertTrue(lc.is_antigravity_desktop_shortcut(
+                root / 'Antigravity (Proxy).lnk',
+                {'target': launcher_target, 'args': '', 'icon': r'C:\Apps\Antigravity.exe,0'},
+            ))
+            self.assertTrue(lc.is_antigravity_desktop_shortcut(
+                root / 'Antigravity (Прокси).lnk',
+                {'target': launcher_target, 'args': '', 'icon': ''},
+            ))
+            self.assertFalse(lc.is_antigravity_desktop_shortcut(
+                root / 'Antigravity (代理).lnk',
+                {'target': launcher_target, 'args': '', 'icon': r'D:\Antigravity IDE\Antigravity IDE.exe'},
+            ))
+            self.assertFalse(lc.is_antigravity_desktop_shortcut(
+                root / 'Antigravity (Proxy).lnk',
+                {'target': launcher_target, 'args': '--ide', 'icon': r'C:\Apps\Antigravity.exe'},
+            ))
+            self.assertFalse(lc.is_antigravity_desktop_shortcut(
+                root / 'Unrelated.lnk',
+                {'target': launcher_target, 'args': '', 'icon': ''},
+            ))
+
             merged, added = lc.merge_debug_arguments('--profile default -- https://example.com')
             self.assertEqual(added, [lc.DEBUG_PORT_FLAG, lc.DEBUG_ADDRESS_FLAG])
             self.assertEqual(merged, '--profile default --remote-debugging-port=0 --remote-debugging-address=127.0.0.1 -- https://example.com')
@@ -130,6 +156,10 @@ class LaunchConfigTests(unittest.TestCase):
             ide_lnk.write_bytes(build_lnk(r'D:\Antigravity IDE\Antigravity IDE.exe', ''))
             start_lnk = programs / 'Antigravity.lnk'
             start_lnk.write_bytes(build_lnk(r'C:\Tools\AntigravityProxy.exe', ''))
+            launcher_lnk = desktop / 'Antigravity (代理).lnk'
+            launcher_lnk.write_bytes(build_lnk(r'C:\Tools\AntigravityLauncher.exe', '', r'C:\Apps\Antigravity.exe'))
+            launcher_ide_lnk = desktop / 'Antigravity IDE (代理).lnk'
+            launcher_ide_lnk.write_bytes(build_lnk(r'C:\Tools\AntigravityLauncher.exe', '', r'D:\Antigravity IDE\Antigravity IDE.exe'))
 
             def fake_writer(updates):
                 for item in updates:
@@ -139,16 +169,19 @@ class LaunchConfigTests(unittest.TestCase):
 
             res, managed = lc.configure_desktop_launch(platform='win32', home=home, env={}, shortcut_writer=fake_writer)
             self.assertTrue(res['configured'])
-            self.assertEqual(len(res['entrypoints']), 2)
+            self.assertEqual(len(res['entrypoints']), 3)
             self.assertEqual(lc.parse_lnk(hub_lnk)['args'], '--custom --remote-debugging-port=0 --remote-debugging-address=127.0.0.1')
             self.assertEqual(lc.parse_lnk(start_lnk)['args'], '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1')
+            self.assertEqual(lc.parse_lnk(launcher_lnk)['args'], '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1')
             self.assertEqual(lc.parse_lnk(ide_lnk).get('args', ''), '')
+            self.assertEqual(lc.parse_lnk(launcher_ide_lnk).get('args', ''), '')
             self.assertTrue(lc.inspect_desktop_launch(platform='win32', home=home, env={})['configured'])
 
             reverted = lc.remove_desktop_launch(platform='win32', home=home, env={}, managed=managed, shortcut_writer=fake_writer)
             self.assertEqual(reverted, {})
             self.assertEqual(lc.parse_lnk(hub_lnk).get('args', ''), '--custom')
             self.assertEqual(lc.parse_lnk(start_lnk).get('args', ''), '')
+            self.assertEqual(lc.parse_lnk(launcher_lnk).get('args', ''), '')
 
     @unittest.skipUnless(sys.platform == 'win32', 'Real WScript.Shell roundtrip runs on Windows only')
     def test_windows_real_wscript_shortcut_roundtrip(self):
