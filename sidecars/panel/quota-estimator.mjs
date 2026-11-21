@@ -2,7 +2,7 @@
 // 1. Differentiated per-window cold-start thresholds (weekly 2% + >=5 reqs, 5h 3% + >=5 reqs, or >=5% standalone)
 // 2. Active-cycle monotonic sampling + mid-cycle reset detection + Theil-Sen median slope
 // 3. Cross-cycle Empirical Bayes shrinkage with automatic regime-shift bypass for official quota changes
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -217,7 +217,7 @@ export class QuotaEstimator {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
-      void this.flush();
+      void this.flush({ createDir: false });
     }, 1500);
     this.saveTimer.unref?.();
   }
@@ -232,7 +232,7 @@ export class QuotaEstimator {
     return JSON.stringify({ version: VERSION, accounts });
   }
 
-  async flush() {
+  async flush({ createDir = true } = {}) {
     if (!this.directory || !this.dirty) return;
     if (this.saving) return this.saving;
     const file = this.filePath();
@@ -241,7 +241,12 @@ export class QuotaEstimator {
     const tmp = join(this.directory, `.${FILE_NAME}.${randomUUID()}.tmp`);
     this.saving = (async () => {
       try {
-        await mkdir(this.directory, { recursive: true });
+        if (createDir) {
+          await mkdir(this.directory, { recursive: true });
+        } else {
+          const info = await stat(this.directory).catch(() => null);
+          if (!info?.isDirectory()) return;
+        }
         await writeFile(tmp, payload, 'utf8');
         await rename(tmp, file);
       } catch {
