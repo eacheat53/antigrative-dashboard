@@ -10,6 +10,7 @@ import {setImmediate as yieldToLiveRequests} from 'node:timers/promises';
 import {delegatedIds} from './delegation.mjs';
 import {collectionFailure} from './collection-state.mjs';
 import {syncAndSummarizeIndex} from './usage-index.mjs';
+import {QuotaEstimator} from './quota-estimator.mjs';
 const HASH=/^[a-f0-9]{64}$/,GUID=/^[a-f0-9-]{36}$/i;
 const hash=value=>createHash('sha256').update(value).digest('hex');
 export const LOCAL_SCOPE=hash('ag-pulse:local-unauthenticated');
@@ -51,7 +52,7 @@ function buildQuotaWindowSpecs(groups){
 function quotaWindowMeta(specs){
   return Object.fromEntries(specs.map(s=>[s.id,{resetMinute:s.resetMinute,idle:s.idle}]));
 }
-function finalizeQuotaWindows(specs,counts={},meta=null){
+function finalizeQuotaWindows(specs,counts={},meta=null,{estimator=null,accountKey=null,allowUpdate=true}={}){
   const out={};
   for(const spec of specs){
     const prev=meta?.[spec.id];
@@ -61,9 +62,13 @@ function finalizeQuotaWindows(specs,counts={},meta=null){
     }
     const c=counts[spec.id];
     if(!c||!c.requests)continue;
-    const usedFraction=typeof spec.remaining==='number'?Math.max(0,Math.min(1,1-spec.remaining)):null;
-    const estimatedFullTokens=c.observedTokens>0&&usedFraction!==null&&usedFraction>=0.05?Math.round(c.observedTokens/usedFraction):null;
-    out[spec.id]={observedTokens:c.observedTokens,estimatedFullTokens,requests:c.requests,usedFraction};
+    if(estimator){
+      out[spec.id]=estimator.estimate(accountKey,spec,c,{allowUpdate});
+    }else{
+      const usedFraction=typeof spec.remaining==='number'?Math.max(0,Math.min(1,1-spec.remaining)):null;
+      const estimatedFullTokens=c.observedTokens>0&&usedFraction!==null&&usedFraction>=0.05?Math.round(c.observedTokens/usedFraction):null;
+      out[spec.id]={observedTokens:c.observedTokens,estimatedFullTokens,requests:c.requests,usedFraction};
+    }
   }
   return out;
 }
@@ -144,7 +149,7 @@ export function usageRecords(raw,conversationId,{maxRows=Infinity,maxBytes=Infin
 const validRow=r=>r&&HASH.test(r.id)&&typeof r.model==='string'&&r.model.length<=120&&
   (r.at===null||Number.isSafeInteger(r.at)&&r.at>=0)&&keys.every(k=>r[k]===null||Number.isSafeInteger(r[k])&&r[k]>=0);
 export class UsageLedger{
-  constructor(directory=join(platformPaths().data,'usage-v1'),{timeZone='Asia/Shanghai',source='desktop-local'}={}){this.directory=directory;this.timeZone=timeZone;this.source=source;}
+  constructor(directory=join(platformPaths().data,'usage-v1'),{timeZone='Asia/Shanghai',source='desktop-local'}={}){this.directory=directory;this.timeZone=timeZone;this.source=source;this.quotaEstimator=new QuotaEstimator(directory);}
   _gate=Promise.resolve();_barrier=Promise.resolve();_writes=new Set();_files=new Map();usageWrites=new Map();revision=0;_cache=null;caches=new Map();diskSummaryPending=null;_diskSummaryRetry=null;diskSummaryRetries=new Map();jsonSummaryPending=new Map();_dirtySources=new Set();_indexQueue=Promise.resolve();
   markSourceDirty(scope,filePath){if(scope&&filePath)this._dirtySources.add(`${scope}/${basename(filePath)}`);}
   get cache(){return this._cache;}
@@ -345,21 +350,22 @@ export class UsageLedger{
     const allBuckets=scope==='all';
     if(!scope||(!allBuckets&&!HASH.test(scope)))return null;
     const {specs,groupInfos}=quotaAccount&&Array.isArray(groups)&&groups.length?buildQuotaWindowSpecs(groups):{specs:[],groupInfos:[]};
+    if(specs.length&&this.quotaEstimator&&!this.quotaEstimator.loaded)await this.quotaEstimator.load();
     const winSig=specs.length?'|'+quotaAccount+'|'+specs.map(s=>`${s.id}@${s.idle?'idle':s.resetMinute}`).join(','):'';
     const today=dateKey(now,this.timeZone),cacheKey=scope+':'+today+winSig;
     const cacheTag=scope+':'+today+'|'+(quotaAccount||'');
-    const finalize=(rawValue,checkMeta=false)=>{
+    const finalize=(rawValue,checkMeta=false,allowUpdate=true)=>{
       if(!specs.length)return rawValue;
-      return {...rawValue,quotaWindows:finalizeQuotaWindows(specs,rawValue._quotaWindowCounts||{},checkMeta?rawValue._quotaWindowMeta||null:null)};
+      return {...rawValue,quotaWindows:finalizeQuotaWindows(specs,rawValue._quotaWindowCounts||{},checkMeta?rawValue._quotaWindowMeta||null:null,{estimator:this.quotaEstimator,accountKey:quotaAccount,allowUpdate})};
     };
     const cached=this.caches.get(cacheKey);
     const fallbackCached=cached||this.findFallbackSummaryCache(cacheTag);
     const unknown=()=>({accountKey:allBuckets?'all-local':scope,timeZone:this.timeZone,today,days:[],models:[],todayTokens:null,weekTokens:null,monthTokens:null,totalTokens:null,requests:null,unreadableFiles:0,source:this.source,summaryStale:true,...(allBuckets?{accountsCount:0}:{}),...(specs.length?{quotaWindows:{}}:{}),});
     const writing=allBuckets?this.usageWrites.size>0:Boolean(this.usageWrites.get(scope));
-    if(writing)return fallbackCached?{...finalize(fallbackCached.value,!cached),summaryStale:true}:unknown();
-    if(cached&&cached.revision===this.revision)return finalize(cached.value);
+    if(writing)return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
+    if(cached&&cached.revision===this.revision)return finalize(cached.value,false,true);
     if(preferCachedMaxAgeMs>0&&cached&&Number.isFinite(cached.at)&&now>=cached.at&&now-cached.at<preferCachedMaxAgeMs){
-      return {...finalize(cached.value),summaryStale:true};
+      return {...finalize(cached.value,false,false),summaryStale:true};
     }
     const scanRevision=this.revision;
     const bucketNames=allBuckets?await this.listAccountBuckets():[scope];
@@ -372,7 +378,7 @@ export class UsageLedger{
     }
     if(hasSqlite){
       this.startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,{buckets:allBuckets?bucketNames:null,quotaAccount,groupInfos,specs,cacheTag});
-      return fallbackCached?{...finalize(fallbackCached.value,!cached),summaryStale:true}:unknown();
+      return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
     }
     const pendingKey=cacheKey+'@'+scanRevision;
     let scan=this.jsonSummaryPending.get(pendingKey);
@@ -413,8 +419,8 @@ export class UsageLedger{
     const value=await scan;
     if(!isCurrent())return null;
     const stillWriting=allBuckets?this.usageWrites.size>0:Boolean(this.usageWrites.get(scope));
-    if(this.revision===scanRevision&&!stillWriting){const entry={key:cacheKey,tag:cacheTag,revision:scanRevision,at:now,value};this.storeSummaryCache(cacheKey,entry);return finalize(value);}
-    return {...finalize(value),summaryStale:true};
+    if(this.revision===scanRevision&&!stillWriting){const entry={key:cacheKey,tag:cacheTag,revision:scanRevision,at:now,value};this.storeSummaryCache(cacheKey,entry);return finalize(value,false,true);}
+    return {...finalize(value,false,false),summaryStale:true};
   }
 }
 export function weekStart(date){const d=new Date(date+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return d.toISOString().slice(0,10);}
@@ -823,5 +829,5 @@ export class DesktopUsage{
     const stillSyncing=syncing||value?.summaryStale===true;
     return {...value,scope:requestedScope,accountKey:requestedScope==='local'?'all-local':identity,activeAccountKey:identity||null,accountAvailable:Boolean(identity),syncing:stillSyncing,status:stillSyncing?'syncing':this.status,missingConversations:this.missingConversations,confirmedMissingConversations:this.confirmedMissingConversations,retryingConversations:this.retryingConversations,persistenceError:this.store.usagePersistenceError===true||this.ledger.diskSummaryError===true};
   }
-  dispose(){this.disposed=true;this.forceQueued=false;clearTimeout(this.continuation);this.continuation=null;clearTimeout(this.liveRecoveryTimer);this.liveRecoveryTimer=null;this.refreshLiveScope();this.fullRemaining.clear();this.fullJournal=null;}
+  dispose(){this.disposed=true;this.forceQueued=false;clearTimeout(this.continuation);this.continuation=null;clearTimeout(this.liveRecoveryTimer);this.liveRecoveryTimer=null;this.refreshLiveScope();this.fullRemaining.clear();this.fullJournal=null;this.ledger?.quotaEstimator?.dispose();}
 }
