@@ -141,3 +141,33 @@ test('idle quota resetAt drift keeps cache warm and same-account fallback avoids
     ledger.endUsageWrite(account);
   }
 });
+
+test('maxWaitMs returns promptly during slow cold index build while background scan warms cache',async t=>{
+  const ledger=await fixture(t);
+  const now=Date.now();
+  await ledger.ingest(account,id,raw({start:new Date(now-60000).toISOString(),model:'Gemini 4 Neon (High)',usage:{responseId:'cold-1',inputTokens:'400',cacheReadTokens:'1000',cacheWriteTokens:'0',outputTokens:'100'}}));
+  ledger.caches.clear();
+
+  let releaseRead;
+  const origRead=ledger.readSummaryRecord.bind(ledger);
+  ledger.readSummaryRecord=async file=>{
+    await new Promise(resolve=>{releaseRead=resolve;});
+    return origRead(file);
+  };
+
+  const t0=Date.now();
+  const early=await ledger.summary('all',now,{maxWaitMs:40});
+  const elapsed=Date.now()-t0;
+  assert.ok(elapsed<250,`maxWaitMs should bound cold-start wait, took ${elapsed}ms`);
+  assert.equal(early.summaryStale,true);
+  assert.equal(early.totalTokens,null);
+  assert.equal(ledger.jsonSummaryPending.size,1,'background scan stays alive after timeout');
+
+  releaseRead();
+  await Promise.all([...ledger.jsonSummaryPending.values()]);
+  assert.equal(ledger.caches.size,1,'background scan populates summary cache on completion');
+
+  const warm=await ledger.summary('all',now,{maxWaitMs:40});
+  assert.equal(warm.summaryStale,undefined);
+  assert.equal(warm.totalTokens,1500);
+});

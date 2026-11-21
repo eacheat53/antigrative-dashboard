@@ -49,7 +49,7 @@ const metrics = async input => {
     return {connection:store.quota?'live':'stale',groups:store.quota||[],speed:null,usage:await usage.snapshot({sync:false,scope:requestedScope,groups:store.quota}),preferences:prefs,theme,integration:integration.health};
   }
   const base=await store.snapshot(input);if(input?.usageSync===true)void usage.sync(true);
-  return {...base,...(liveComposerModel?{composerModel:liveComposerModel}:{}),usage:await usage.snapshot({sync:input?.usageSync===true,scope:prefs?.usageScope||'local',groups:base.groups}),preferences:prefs,theme,integration:integration.health};
+  return {...base,...(liveComposerModel?{composerModel:liveComposerModel}:{}),usage:await usage.snapshot({sync:input?.usageSync===true,scope:prefs?.usageScope||'local',groups:base.groups,maxWaitMs:input?.usageSync===true?0:350}),preferences:prefs,theme,integration:integration.health};
 };
 const usageSource=()=>{const s=readFileSync(join(HERE,'..','..','compat','usage-ui.cjs'),'utf8');return `window.__agPulseUsageFactory=(${s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'')});`;};
 const updateSource=()=>{const s=readFileSync(join(HERE,'..','..','compat','update-ui.cjs'),'utf8');return `window.__agPulseUpdateFactory=(${s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'')});`;};

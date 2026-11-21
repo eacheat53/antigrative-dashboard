@@ -65,7 +65,7 @@ const snapshot=async input=>{
     }catch{value={connection:'offline',speed:null,groups:[],error:'IDE local API unavailable'};}
   }
   if(input.usageSync===true)void usage.sync(true);
-  return {...value,usage:await usage.snapshot({sync:input.usageSync===true,scope:prefs?.usageScope||'local',groups:value.groups}),enabled:true,preferences:prefs,theme};
+  return {...value,usage:await usage.snapshot({sync:input.usageSync===true,scope:prefs?.usageScope||'local',groups:value.groups,maxWaitMs:input.usageSync===true?0:350}),enabled:true,preferences:prefs,theme};
 };
 const ui=new RuntimeUi({profile,source,sourceForTarget:target=>target.ideWebview?webviewSource:source,owner,owns:()=>ownership.isOwner(),preferences,snapshot,dataDir:data,targetOrigin:target=>target.ideWebview?new URL(target.url).origin:'vscode-file://vscode-app',
   discover:async()=>{const result=await ideTargets(profile);debugPort=result.port;return result.targets;}});

@@ -346,7 +346,7 @@ export class UsageLedger{
     }
     return count;
   }
-  async summary(scope,now=Date.now(),{isCurrent=()=>true,groups=null,quotaAccount=null,preferCachedMaxAgeMs=0}={}){
+  async summary(scope,now=Date.now(),{isCurrent=()=>true,groups=null,quotaAccount=null,preferCachedMaxAgeMs=0,maxWaitMs=0}={}){
     const allBuckets=scope==='all';
     if(!scope||(!allBuckets&&!HASH.test(scope)))return null;
     const {specs,groupInfos}=quotaAccount&&Array.isArray(groups)&&groups.length?buildQuotaWindowSpecs(groups):{specs:[],groupInfos:[]};
@@ -412,11 +412,31 @@ export class UsageLedger{
           Object.defineProperty(value,'_quotaWindowCounts',{value:quotaWindowCounts||{},enumerable:false,configurable:true});
           Object.defineProperty(value,'_quotaWindowMeta',{value:quotaWindowMeta(specs),enumerable:false,configurable:true});
         }
+        const stillWriting=allBuckets?this.usageWrites.size>0:Boolean(this.usageWrites.get(scope));
+        if(this.revision===scanRevision&&!stillWriting){
+          this.storeSummaryCache(cacheKey,{key:cacheKey,tag:cacheTag,revision:scanRevision,at:now,value});
+        }
         return value;
       })().finally(()=>{if(this.jsonSummaryPending.get(pendingKey)===scan)this.jsonSummaryPending.delete(pendingKey);});
       this.jsonSummaryPending.set(pendingKey,scan);
     }
-    const value=await scan;
+    let value;
+    if(maxWaitMs>0){
+      let timer;
+      const raced=await Promise.race([
+        scan.then(v=>({done:true,value:v})),
+        new Promise(resolve=>{timer=setTimeout(()=>resolve({done:false}),maxWaitMs);timer.unref?.();}),
+      ]);
+      clearTimeout(timer);
+      if(!raced.done){
+        scan.catch(()=>{});
+        if(!isCurrent())return null;
+        return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
+      }
+      value=raced.value;
+    }else{
+      value=await scan;
+    }
     if(!isCurrent())return null;
     const stillWriting=allBuckets?this.usageWrites.size>0:Boolean(this.usageWrites.get(scope));
     if(this.revision===scanRevision&&!stillWriting){const entry={key:cacheKey,tag:cacheTag,revision:scanRevision,at:now,value};this.storeSummaryCache(cacheKey,entry);return finalize(value,false,true);}
@@ -805,14 +825,14 @@ export class DesktopUsage{
     const confirmed=[...this.passFailures].filter(id=>(journal[hash(id)]?.failures||this.readFailures.get(id)?.failures||0)>=2).length;
     return {current,missing:missing+this.passFailures.size,confirmed,retrying:missing+this.passFailures.size-confirmed,more,partial};
   }
-  async snapshot({sync=true,scope=undefined,groups=null}={}){
+  async snapshot({sync=true,scope=undefined,groups=null,maxWaitMs=0}={}){
     this.refreshLiveScope();
     const identity=this.store.identity,writeScope=this.writeScope(),epoch=this.store.epoch;
     const requestedScope=scope===undefined?(identity?'account':'local'):(scope==='account'?'account':'local');
     if(this.scope!==writeScope||this.scopeEpoch!==epoch){this.lastSync=0;this.status='waiting';this.missingConversations=0;this.confirmedMissingConversations=0;this.retryingConversations=0;if(this.pending)this.forceQueued=true;}
     if(sync&&this.now()-this.lastSync>60000&&!this.continuation)void this.sync();
     const current=()=>!this.disposed&&this.owns()&&writeScope===this.writeScope()&&epoch===this.store.epoch;
-    const syncing=this.syncing||!!this.continuation||!!this.ledger.diskSummaryPending||!!this.ledger.diskWrites;
+    const syncing=this.syncing||!!this.continuation||!!this.ledger.diskSummaryPending||!!this.ledger.diskWrites||this.ledger.jsonSummaryPending.size>0;
     const backfillActive=this.syncing||Boolean(this.continuation);
     if(requestedScope==='account'&&!identity){
       const today=dateKey(Date.now(),this.ledger.timeZone),accountsCount=await this.ledger.countAccounts();
@@ -820,7 +840,7 @@ export class DesktopUsage{
       return {accountKey:null,activeAccountKey:null,scope:'account',accountAvailable:false,accountsCount,timeZone:this.ledger.timeZone,today,days:[],models:[],todayTokens:0,weekTokens:0,monthTokens:0,totalTokens:0,unknownTokens:0,unknownRequests:0,partialRequests:0,unreadableFiles:0,requests:0,firstDate:null,updatedAt:new Date().toISOString(),source:this.ledger.source,quotaWindows:{},syncing,status:syncing?'syncing':this.status,missingConversations:this.missingConversations,confirmedMissingConversations:this.confirmedMissingConversations,retryingConversations:this.retryingConversations,persistenceError:this.store.usagePersistenceError===true||this.ledger.diskSummaryError===true};
     }
     const ledgerTarget=requestedScope==='account'?identity:'all';
-    const value=await this.ledger.summary(ledgerTarget,Date.now(),{isCurrent:current,groups:identity?groups:null,quotaAccount:identity,preferCachedMaxAgeMs:backfillActive?5000:0});if(!current())return null;
+    const value=await this.ledger.summary(ledgerTarget,Date.now(),{isCurrent:current,groups:identity?groups:null,quotaAccount:identity,preferCachedMaxAgeMs:backfillActive?5000:0,maxWaitMs});if(!current())return null;
     if(scope!==undefined&&!syncing&&!value?.summaryStale&&identity&&!this.ledger.diskSummaryPending&&!this.ledger.usageWrites.size){
       const otherScope=requestedScope==='local'?identity:'all';
       const prefix=otherScope+':'+value.today;
