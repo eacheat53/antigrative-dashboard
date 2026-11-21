@@ -352,17 +352,24 @@ test('defaultExecPowerShell updates real Windows shortcuts under Chinese folders
     const fakeExe = join(root, 'AntigravityLauncher.exe');
     await writeFile(fakeExe, '');
 
-    // Create real Windows .lnk files via WScript.Shell so defaultExecPowerShell edits real COM shortcuts.
+    // Create real Windows .lnk files via WScript.Shell (staged via ASCII temp path so creation
+    // works even on en-US CP1252 Windows runners where WshShortcut.Save() rejects non-ACP paths).
     const createScript = [
       "$ErrorActionPreference = 'Stop'",
       '[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)',
       '$items = [Console]::In.ReadToEnd() | ConvertFrom-Json',
       '$ws = New-Object -ComObject WScript.Shell',
       'foreach ($it in @($items)) {',
-      '  $s = $ws.CreateShortcut($it.path)',
-      '  $s.TargetPath = [string]$it.target',
-      '  $s.Arguments = ""',
-      '  $s.Save()',
+      '  $tmp = Join-Path ([IO.Path]::GetTempPath()) ("ag-lnk-init-" + [guid]::NewGuid().ToString("N") + ".lnk")',
+      '  try {',
+      '    $s = $ws.CreateShortcut($tmp)',
+      '    $s.TargetPath = [string]$it.target',
+      '    $s.Arguments = ""',
+      '    $s.Save()',
+      '    Copy-Item -LiteralPath $tmp -Destination $it.path -Force',
+      '  } finally {',
+      '    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue',
+      '  }',
       '}',
     ].join('\n');
     await new Promise((resolve, reject) => {
