@@ -41,14 +41,23 @@ function buildQuotaWindowSpecs(groups){
       if(!Number.isFinite(endAt))continue;
       const dur=win==='5h'?18000000:604800000;
       const remaining=typeof b.remaining==='number'&&Number.isFinite(b.remaining)&&b.remaining>=0&&b.remaining<=1?b.remaining:null;
-      specs.push({id:`${g.id}:${win}`,groupId:g.id,window:win,startAt:endAt-dur,endAt,resetMinute:Math.round(endAt/60000),remaining});
+      const idle=remaining!==null&&remaining>=1;
+      specs.push({id:`${g.id}:${win}`,groupId:g.id,window:win,startAt:endAt-dur,endAt,resetMinute:Math.round(endAt/60000),remaining,idle});
     }
   }
   return {specs,groupInfos};
 }
-function finalizeQuotaWindows(specs,counts={}){
+function quotaWindowMeta(specs){
+  return Object.fromEntries(specs.map(s=>[s.id,{resetMinute:s.resetMinute,idle:s.idle}]));
+}
+function finalizeQuotaWindows(specs,counts={},meta=null){
   const out={};
   for(const spec of specs){
+    const prev=meta?.[spec.id];
+    if(prev){
+      if(spec.idle!==prev.idle)continue;
+      if(!spec.idle&&Math.abs(prev.resetMinute-spec.resetMinute)>2)continue;
+    }
     const c=counts[spec.id];
     if(!c||!c.requests)continue;
     const usedFraction=typeof spec.remaining==='number'?Math.max(0,Math.min(1,1-spec.remaining)):null;
@@ -275,6 +284,24 @@ export class UsageLedger{
     // diskQueue independently limits expensive workers to one at a time.
     return this.enqueue(file,()=>this.mergeDisk(scope,id,input,options)).finally(()=>{this.diskWrites--;this.endUsageWrite(scope);});
   }
+  storeSummaryCache(cacheKey,entry){
+    const tag=entry?.tag;
+    if(tag){
+      for(const [k,existing]of this.caches){
+        if(k!==cacheKey&&existing?.tag===tag)this.caches.delete(k);
+      }
+    }
+    this._cache=entry;
+    this.caches.set(cacheKey,entry);
+  }
+  findFallbackSummaryCache(tag){
+    let best=null;
+    for(const entry of this.caches.values()){
+      if(entry?.tag!==tag)continue;
+      if(!best||(entry.revision>best.revision)||(entry.revision===best.revision&&(entry.at||0)>(best.at||0)))best=entry;
+    }
+    return best;
+  }
   startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,options={}){
     const retry=this.diskSummaryRetries.get(cacheKey);
     if(this.diskSummaryPending||retry&&retry.at>Date.now())return;
@@ -283,11 +310,12 @@ export class UsageLedger{
       if(!raw||isCurrent()!==true)return;this.diskSummaryError=false;
       const {quotaWindowCounts,...value}=raw;
       if(quotaWindowCounts)Object.defineProperty(value,'_quotaWindowCounts',{value:quotaWindowCounts,enumerable:false,configurable:true});
-      const entry={key:cacheKey,revision:scanRevision,at:now,value};
-      if(this.revision===scanRevision){this._cache=entry;this.caches.set(cacheKey,entry);this._diskSummaryRetry=null;this.diskSummaryRetries.delete(cacheKey);}
+      if(options.specs?.length)Object.defineProperty(value,'_quotaWindowMeta',{value:quotaWindowMeta(options.specs),enumerable:false,configurable:true});
+      const entry={key:cacheKey,tag:options.cacheTag||null,revision:scanRevision,at:now,value};
+      if(this.revision===scanRevision){this.storeSummaryCache(cacheKey,entry);this._diskSummaryRetry=null;this.diskSummaryRetries.delete(cacheKey);}
       else {
         const existing=this.caches.get(cacheKey);
-        if(!existing||existing.revision<=scanRevision){this._cache=entry;this.caches.set(cacheKey,entry);}
+        if(!existing||existing.revision<=scanRevision){this.storeSummaryCache(cacheKey,entry);}
         const retryEntry={key:cacheKey,at:Date.now()+30000};
         this._diskSummaryRetry=retryEntry;this.diskSummaryRetries.set(cacheKey,retryEntry);
       }
@@ -314,16 +342,18 @@ export class UsageLedger{
     const allBuckets=scope==='all';
     if(!scope||(!allBuckets&&!HASH.test(scope)))return null;
     const {specs,groupInfos}=quotaAccount&&Array.isArray(groups)&&groups.length?buildQuotaWindowSpecs(groups):{specs:[],groupInfos:[]};
-    const winSig=specs.length?'|'+quotaAccount+'|'+specs.map(s=>`${s.id}@${s.resetMinute}`).join(','):'';
+    const winSig=specs.length?'|'+quotaAccount+'|'+specs.map(s=>`${s.id}@${s.idle?'idle':s.resetMinute}`).join(','):'';
     const today=dateKey(now,this.timeZone),cacheKey=scope+':'+today+winSig;
-    const finalize=rawValue=>{
+    const cacheTag=scope+':'+today+'|'+(quotaAccount||'');
+    const finalize=(rawValue,checkMeta=false)=>{
       if(!specs.length)return rawValue;
-      return {...rawValue,quotaWindows:finalizeQuotaWindows(specs,rawValue._quotaWindowCounts||{})};
+      return {...rawValue,quotaWindows:finalizeQuotaWindows(specs,rawValue._quotaWindowCounts||{},checkMeta?rawValue._quotaWindowMeta||null:null)};
     };
     const cached=this.caches.get(cacheKey);
+    const fallbackCached=cached||this.findFallbackSummaryCache(cacheTag);
     const unknown=()=>({accountKey:allBuckets?'all-local':scope,timeZone:this.timeZone,today,days:[],models:[],todayTokens:null,weekTokens:null,monthTokens:null,totalTokens:null,requests:null,unreadableFiles:0,source:this.source,summaryStale:true,...(allBuckets?{accountsCount:0}:{}),...(specs.length?{quotaWindows:{}}:{}),});
     const writing=allBuckets?this.usageWrites.size>0:Boolean(this.usageWrites.get(scope));
-    if(writing)return cached?{...finalize(cached.value),summaryStale:true}:unknown();
+    if(writing)return fallbackCached?{...finalize(fallbackCached.value,!cached),summaryStale:true}:unknown();
     if(cached&&cached.revision===this.revision)return finalize(cached.value);
     if(preferCachedMaxAgeMs>0&&cached&&Number.isFinite(cached.at)&&now>=cached.at&&now-cached.at<preferCachedMaxAgeMs){
       return {...finalize(cached.value),summaryStale:true};
@@ -338,8 +368,8 @@ export class UsageLedger{
       bucketEntries.push({dir:b,files});
     }
     if(hasSqlite){
-      this.startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,{buckets:allBuckets?bucketNames:null,quotaAccount,groupInfos,specs});
-      return cached?{...finalize(cached.value),summaryStale:true}:unknown();
+      this.startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,{buckets:allBuckets?bucketNames:null,quotaAccount,groupInfos,specs,cacheTag});
+      return fallbackCached?{...finalize(fallbackCached.value,!cached),summaryStale:true}:unknown();
     }
     const pendingKey=cacheKey+'@'+scanRevision;
     let scan=this.jsonSummaryPending.get(pendingKey);
@@ -378,7 +408,10 @@ export class UsageLedger{
           monthTokens:days.filter(d=>d.date.slice(0,7)===today.slice(0,7)&&d.date<=today).reduce((n,d)=>n+total(d),0),
           totalTokens:days.reduce((n,d)=>n+total(d),0)+unknownTokens,unknownTokens,unknownRequests,partialRequests,unreadableFiles:unreadable,
           requests:seen.size,firstDate:days[0]?.date||null,updatedAt:new Date(now).toISOString(),source:this.source,...(allBuckets?{accountsCount:activeAccounts.size}:{})};
-        if(specs.length)Object.defineProperty(value,'_quotaWindowCounts',{value:windowCounts,enumerable:false,configurable:true});
+        if(specs.length){
+          Object.defineProperty(value,'_quotaWindowCounts',{value:windowCounts,enumerable:false,configurable:true});
+          Object.defineProperty(value,'_quotaWindowMeta',{value:quotaWindowMeta(specs),enumerable:false,configurable:true});
+        }
         return value;
       })().finally(()=>{if(this.jsonSummaryPending.get(pendingKey)===scan)this.jsonSummaryPending.delete(pendingKey);});
       this.jsonSummaryPending.set(pendingKey,scan);
@@ -386,7 +419,7 @@ export class UsageLedger{
     const value=await scan;
     if(!isCurrent())return null;
     const stillWriting=allBuckets?this.usageWrites.size>0:Boolean(this.usageWrites.get(scope));
-    if(this.revision===scanRevision&&!stillWriting){const entry={key:cacheKey,revision:scanRevision,at:now,value};this._cache=entry;this.caches.set(cacheKey,entry);return finalize(value);}
+    if(this.revision===scanRevision&&!stillWriting){const entry={key:cacheKey,tag:cacheTag,revision:scanRevision,at:now,value};this.storeSummaryCache(cacheKey,entry);return finalize(value);}
     return {...finalize(value),summaryStale:true};
   }
 }

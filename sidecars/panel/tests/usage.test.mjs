@@ -97,3 +97,47 @@ test('all-local scope aggregates across accounts + unauthenticated sessions and 
   const unauthAcct=await tracker.snapshot({sync:false,scope:'account',groups});
   assert.equal(unauthAcct.accountAvailable,false);assert.equal(unauthAcct.totalTokens,0);
 });
+
+test('idle quota resetAt drift keeps cache warm and same-account fallback avoids empty quotaWindows during writes',async t=>{
+  const ledger=await fixture(t);
+  const now=Date.parse('2026-10-11T08:00:00Z');
+  const fiveReset=new Date(now+2*3600000).toISOString();
+  const weekReset=new Date(now+3*86400000).toISOString();
+  await ledger.ingest(account,id,raw({model:'Gemini 4 Neon (High)',start:'2026-10-11T06:00:00Z',usage:{responseId:'g-1',inputTokens:'500',cacheReadTokens:'1500',cacheWriteTokens:'0',outputTokens:'200'}}));
+  let reads=0;
+  const origRead=ledger.readSummaryRecord.bind(ledger);
+  ledger.readSummaryRecord=async file=>{reads++;return origRead(file);};
+
+  const makeGroups=({five=fiveReset,week=weekReset,fiveRem=0.8,weekRem=0.5,idleShiftMin=0}={})=>[
+    {id:'gemini',name:'Gemini',windows:{'5h':{available:true,remaining:fiveRem,resetAt:five},weekly:{available:true,remaining:weekRem,resetAt:week}}},
+    {id:'3p',name:'Claude / GPT',windows:{'5h':{available:true,remaining:1,resetAt:new Date(now+5*3600000+idleShiftMin*60000).toISOString()},weekly:{available:true,remaining:1,resetAt:new Date(now+7*86400000+idleShiftMin*60000).toISOString()}}},
+  ];
+
+  const first=await ledger.summary('all',now,{groups:makeGroups({idleShiftMin:0}),quotaAccount:account});
+  assert.equal(reads,1);
+  assert.equal(first.quotaWindows['gemini:5h'].observedTokens,2200);
+  assert.equal(first.quotaWindows['gemini:weekly'].observedTokens,2200);
+
+  // Rolling resetAt on idle (remaining=1) 3p windows must hit cache with zero extra reads or cache growth.
+  const second=await ledger.summary('all',now+120000,{groups:makeGroups({idleShiftMin:2,fiveRem:0.75}),quotaAccount:account});
+  assert.equal(reads,1,'Idle 3p resetAt drift must not invalidate summary cache');
+  assert.equal(ledger.caches.size,1);
+  assert.equal(second.quotaWindows['gemini:5h'].observedTokens,2200);
+  assert.equal(second.quotaWindows['gemini:5h'].estimatedFullTokens,8800);
+
+  // While a write is in progress and active 5h resets to a new cycle, weekly stays preserved and reset 5h does not leak old usage.
+  ledger.beginUsageWrite(account);
+  try{
+    const jitter=await ledger.summary('all',now+180000,{groups:makeGroups({five:new Date(Date.parse(fiveReset)+60000).toISOString()}),quotaAccount:account});
+    assert.equal(jitter.summaryStale,true);
+    assert.equal(jitter.quotaWindows['gemini:5h'].observedTokens,2200);
+    assert.equal(jitter.quotaWindows['gemini:weekly'].observedTokens,2200);
+
+    const reset5h=await ledger.summary('all',now+180000,{groups:makeGroups({five:new Date(Date.parse(fiveReset)+5*3600000).toISOString()}),quotaAccount:account});
+    assert.equal(reset5h.summaryStale,true);
+    assert.equal(reset5h.quotaWindows['gemini:5h'],undefined,'Reset 5h window must not display prior cycle usage');
+    assert.equal(reset5h.quotaWindows['gemini:weekly'].observedTokens,2200,'Unchanged weekly window stays visible without flicker');
+  }finally{
+    ledger.endUsageWrite(account);
+  }
+});
