@@ -1,7 +1,7 @@
 import {Worker} from 'node:worker_threads';
 // Local usage ledger. Never stores prompts, credentials or raw request IDs.
 import {readFile,writeFile,mkdir,rename,readdir,unlink,open,stat,lstat} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join,basename} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {tokenCount,requestCacheMetrics} from './metrics.mjs';
 import {platformPaths} from '../../compat/platform.mjs';
@@ -9,6 +9,7 @@ import {discoverLocalConversations,conversationId} from './local-conversations.m
 import {setImmediate as yieldToLiveRequests} from 'node:timers/promises';
 import {delegatedIds} from './delegation.mjs';
 import {collectionFailure} from './collection-state.mjs';
+import {syncAndSummarizeIndex} from './usage-index.mjs';
 const HASH=/^[a-f0-9]{64}$/,GUID=/^[a-f0-9-]{36}$/i;
 const hash=value=>createHash('sha256').update(value).digest('hex');
 export const LOCAL_SCOPE=hash('ag-pulse:local-unauthenticated');
@@ -144,7 +145,8 @@ const validRow=r=>r&&HASH.test(r.id)&&typeof r.model==='string'&&r.model.length<
   (r.at===null||Number.isSafeInteger(r.at)&&r.at>=0)&&keys.every(k=>r[k]===null||Number.isSafeInteger(r[k])&&r[k]>=0);
 export class UsageLedger{
   constructor(directory=join(platformPaths().data,'usage-v1'),{timeZone='Asia/Shanghai',source='desktop-local'}={}){this.directory=directory;this.timeZone=timeZone;this.source=source;}
-  _gate=Promise.resolve();_barrier=Promise.resolve();_writes=new Set();_files=new Map();usageWrites=new Map();revision=0;_cache=null;caches=new Map();diskSummaryPending=null;_diskSummaryRetry=null;diskSummaryRetries=new Map();jsonSummaryPending=new Map();
+  _gate=Promise.resolve();_barrier=Promise.resolve();_writes=new Set();_files=new Map();usageWrites=new Map();revision=0;_cache=null;caches=new Map();diskSummaryPending=null;_diskSummaryRetry=null;diskSummaryRetries=new Map();jsonSummaryPending=new Map();_dirtySources=new Set();_indexQueue=Promise.resolve();
+  markSourceDirty(scope,filePath){if(scope&&filePath)this._dirtySources.add(`${scope}/${basename(filePath)}`);}
   get cache(){return this._cache;}
   set cache(value){this._cache=value;if(!value)this.caches.clear();else if(value.key)this.caches.set(value.key,value);}
   get diskSummaryRetry(){return this._diskSummaryRetry;}
@@ -231,6 +233,7 @@ export class UsageLedger{
       finally{await unlink(temp).catch(()=>{});}
       // Keep the last same-account/day result as a visibly stale fallback
       // while a potentially expensive disk-backed summary is rebuilt.
+      this.markSourceDirty(scope,file);
       this.revision++;
     }).catch(error=>{if(isCurrent()===true)throw error;}).finally(()=>this.endUsageWrite(scope));
   }
@@ -270,7 +273,7 @@ export class UsageLedger{
       const staging=file+'.'+randomUUID()+'.tmp';
       try{
         const result=await this.diskJob({action:'merge',scope,previous,staging,...input},{isCurrent});if(!result||isCurrent()!==true)return;
-        if(result.changed!==false){await rename(staging,file);this.revision++;}
+        if(result.changed!==false){await rename(staging,file);this.markSourceDirty(scope,file);this.revision++;}
         this.diskSignatures??=new Map();this.diskSignatures.delete(file);
         if(signature){const info=await lstat(file);if(!info.isSymbolicLink()&&info.isFile())this.diskSignatures.set(file,{signature,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,ino:info.ino});}
         while(this.diskSignatures.size>128)this.diskSignatures.delete(this.diskSignatures.keys().next().value);
@@ -306,7 +309,7 @@ export class UsageLedger{
     const retry=this.diskSummaryRetries.get(cacheKey);
     if(this.diskSummaryPending||retry&&retry.at>Date.now())return;
     const staging=scope==='all'?join(this.directory,'.summary-all-'+randomUUID()+'.tmp'):join(this.directory,scope,'.summary-'+randomUUID()+'.tmp');
-    this.diskSummaryPending=this.diskJob({action:'summary',scope,directory:scope==='all'?this.directory:join(this.directory,scope),buckets:options.buckets||null,quotaAccount:options.quotaAccount||null,quotaGroups:options.groupInfos||null,quotaWindowSpecs:options.specs||null,localScope:LOCAL_SCOPE,staging,now,timeZone:this.timeZone,source:this.source},{isCurrent}).then(raw=>{
+    this.diskSummaryPending=this.diskJob({action:'summary',scope,rootDirectory:this.directory,directory:scope==='all'?this.directory:join(this.directory,scope),buckets:options.buckets||null,quotaAccount:options.quotaAccount||null,quotaGroups:options.groupInfos||null,quotaWindowSpecs:options.specs||null,localScope:LOCAL_SCOPE,staging,now,timeZone:this.timeZone,source:this.source},{isCurrent}).then(raw=>{
       if(!raw||isCurrent()!==true)return;this.diskSummaryError=false;
       const {quotaWindowCounts,...value}=raw;
       if(quotaWindowCounts)Object.defineProperty(value,'_quotaWindowCounts',{value:quotaWindowCounts,enumerable:false,configurable:true});
@@ -375,41 +378,32 @@ export class UsageLedger{
     let scan=this.jsonSummaryPending.get(pendingKey);
     if(!scan){
       scan=(async()=>{
-        const daily=new Map(),models=new Set(),seen=new Map(),acctIds=new Set(),activeAccounts=new Set();let unreadable=0,unknownTokens=0,unknownRequests=0,partialRequests=0;
-        for(const entry of bucketEntries){
-          const jsonFiles=entry.files.filter(name=>/^[a-f0-9]{64}\.json$/.test(name));
-          for(const name of jsonFiles){
-            try{
-              const text=await this.readSummaryRecord(join(this.directory,entry.dir,name));
-              const record=JSON.parse(text);if(record.schema!==1||record.account!==entry.dir||!Array.isArray(record.records)||!record.records.every(validRow))throw Error('Invalid ledger');
-              if(entry.dir!==LOCAL_SCOPE&&record.records.length)activeAccounts.add(entry.dir);
-              for(const r of record.records){const previous=seen.get(r.id);if(!previous||sum(r)>sum(previous))seen.set(r.id,r);if(entry.dir===quotaAccount)acctIds.add(r.id);}
-            }catch{unreadable++;}
-          }
+        const dirtySnapshot=this._dirtySources.size?new Set(this._dirtySources):null;
+        const runIndex=()=>syncAndSummarizeIndex({
+          directory:this.directory,
+          scope,
+          buckets:bucketEntries,
+          now,
+          timeZone:this.timeZone,
+          source:this.source,
+          localScope:LOCAL_SCOPE,
+          quotaAccount,
+          quotaGroups:groupInfos,
+          quotaWindowSpecs:specs,
+          classifyQuotaGroupId,
+          readRecord:file=>this.readSummaryRecord(file),
+          dirtyFiles:dirtySnapshot,
+          yieldEveryMs:8,
+        });
+        const next=this._indexQueue.catch(()=>{}).then(runIndex);
+        this._indexQueue=next.catch(()=>{});
+        const raw=await next;
+        if(dirtySnapshot&&this.revision===scanRevision){
+          for(const k of dirtySnapshot)this._dirtySources.delete(k);
         }
-        const windowCounts={};
-        for(const r of seen.values()){
-          models.add(r.model);if(r.partial)partialRequests++;
-          if(specs.length&&r.at!==null&&acctIds.has(r.id)){
-            const gid=classifyQuotaGroupId(groupInfos,r.model);
-            for(const spec of specs)if(spec.groupId===gid&&r.at>=spec.startAt&&r.at<=spec.endAt){
-              const item=windowCounts[spec.id]||{observedTokens:0,requests:0};item.observedTokens+=sum(r);item.requests++;windowCounts[spec.id]=item;
-            }
-          }
-          if(r.at===null){unknownTokens+=sum(r);unknownRequests++;continue;}
-          const date=dateKey(r.at,this.timeZone);if(!daily.has(date))daily.set(date,{date,models:{}});
-          const day=daily.get(date);day.models[r.model]||={uncached:0,cacheRead:0,cacheWrite:0,output:0,total:0,requests:0};
-          const bucket=day.models[r.model];for(const key of keys)bucket[key]+=r[key]??0;bucket.total+=sum(r);bucket.requests++;
-        }
-        const days=[...daily.values()].sort((a,b)=>a.date.localeCompare(b.date));
-        const total=day=>Object.values(day.models).reduce((n,r)=>n+r.total,0);
-        const value={accountKey:allBuckets?'all-local':scope,timeZone:this.timeZone,today,days,models:[...models].sort(),todayTokens:days.filter(d=>d.date===today).reduce((n,d)=>n+total(d),0),
-          weekTokens:days.filter(d=>d.date>=weekStart(today)&&d.date<=today).reduce((n,d)=>n+total(d),0),
-          monthTokens:days.filter(d=>d.date.slice(0,7)===today.slice(0,7)&&d.date<=today).reduce((n,d)=>n+total(d),0),
-          totalTokens:days.reduce((n,d)=>n+total(d),0)+unknownTokens,unknownTokens,unknownRequests,partialRequests,unreadableFiles:unreadable,
-          requests:seen.size,firstDate:days[0]?.date||null,updatedAt:new Date(now).toISOString(),source:this.source,...(allBuckets?{accountsCount:activeAccounts.size}:{})};
+        const {quotaWindowCounts,...value}=raw;
         if(specs.length){
-          Object.defineProperty(value,'_quotaWindowCounts',{value:windowCounts,enumerable:false,configurable:true});
+          Object.defineProperty(value,'_quotaWindowCounts',{value:quotaWindowCounts||{},enumerable:false,configurable:true});
           Object.defineProperty(value,'_quotaWindowMeta',{value:quotaWindowMeta(specs),enumerable:false,configurable:true});
         }
         return value;
@@ -427,11 +421,11 @@ export function weekStart(date){const d=new Date(date+'T00:00:00Z');d.setUTCDate
 
 export class DesktopUsage{
   constructor(store,ledger=new UsageLedger(),{host=null,discoverLocal=null,owns=()=>true,now=Date.now,sliceMs=1500,continueDelay=1200,itemDelay=undefined,
-    maxCandidates=20,maxCandidatesPerSlice=8,maxPassMs=15000,maxMapEntries=4096,localScanMs=30000,
+    maxCandidates=20,maxCandidatesPerSlice=8,maxPassMs=15000,maxMapEntries=4096,localScanMs=30000,memorySoftLimitBytes=128*1024*1024,
     liveMaxConversations=16,liveMaxRows=8192,liveMaxBytes=4*1024*1024,liveMaxGroups=128,liveMaxRecoveryGuards=16,liveMaxRecoveries=256,liveRetryMs=1000,livePollMs=1000,liveRecoveryPollMs=1000,liveBackgroundPollMs=1000,liveBackgroundRetryMs=60000}={}){
     this.store=store;this.ledger=ledger;this.fingerprints=new Map();this.host=host;this.owns=()=>owns()===true;this.now=now;
     this.discoverLocal=discoverLocal||(()=>host?discoverLocalConversations({host}):Promise.resolve({conversations:[],errors:0}));
-    this.customDiscover=Boolean(discoverLocal);this.localScanMs=localScanMs;this.localScanAt=-Infinity;this.localScanResult=null;
+    this.customDiscover=Boolean(discoverLocal);this.localScanMs=localScanMs;this.localScanAt=-Infinity;this.localScanResult=null;this.memorySoftLimitBytes=memorySoftLimitBytes;
     this.sliceMs=sliceMs;this.continueDelay=continueDelay;this.itemDelay=Number.isFinite(itemDelay)&&itemDelay>=0?itemDelay:(continueDelay>=100?80:0);this.maxCandidates=maxCandidates;this.maxCandidatesPerSlice=maxCandidatesPerSlice;
     this.maxPassMs=maxPassMs;this.maxMapEntries=maxMapEntries;this.fullRemaining=new Map();this.fullJournal=null;this.fullMissing=0;this.passSeen=new Set();this.passFailures=new Set();this.readFailures=new Map();this.delegatedCandidates=new Map();
     this.liveMaxConversations=liveMaxConversations;this.liveMaxRows=liveMaxRows;this.liveMaxBytes=liveMaxBytes;this.liveMaxGroups=liveMaxGroups;this.liveMaxRecoveryGuards=liveMaxRecoveryGuards;this.liveMaxRecoveries=liveMaxRecoveries;this.liveRetryMs=liveRetryMs;this.livePollMs=livePollMs;
@@ -737,6 +731,11 @@ export class DesktopUsage{
       const settled=s?.modifiedAt&&/IDLE|DONE|COMPLETED|CANCELLED|CANCELED|STOPPED|FAILED|ERROR/.test(String(s.status||''));
       if(!forced&&!old?.hasDelegates&&(c.signature?unchanged&&old.state==='complete'&&(!s||cached||settled):cached))continue;
       if(processed&&this.now()-started>=this.sliceMs){more=completePass;break;}
+      if(processed&&this.memorySoftLimitBytes>0&&process.memoryUsage().heapUsed>=this.memorySoftLimitBytes){
+        this.store.client?.reader?.trim?.();
+        this.store.trimSessions?.();
+        more=completePass;break;
+      }
       processed++;
       this.passSeen.add(c.id);this.capMap(this.passSeen);
       this.fullRemaining.delete(c.id);

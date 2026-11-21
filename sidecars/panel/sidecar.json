@@ -1,7 +1,6 @@
 {
   "command": "node",
   "args": [
-    "--max-old-space-size=192",
     "main.mjs"
   ],
   "restart_policy": "always",
