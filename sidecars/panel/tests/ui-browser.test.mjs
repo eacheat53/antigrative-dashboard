@@ -114,8 +114,9 @@ test('font sync, scope switching and quota window reference render end-to-end in
     'gemini-4-argon-medium', 'gemini-3.8-flash-high', 'gemini-3.8-flash-medium',
     'claude-opus-5.5-medium', 'gemini-flash', 'orchestrator-argon',
     'gemini-3.8-flash', 'gemini-3.8-flash-tiered', 'gpt-5.4-high', 'claude-sonnet-4.6',
-    'claude-opus-4.5', 'gemini-3.5-pro', 'gemini-3.5-flash', 'gpt-5.4-mini',
-    'o3-pro', 'deepseek-r1',
+    'Claude Sonnet 4.6 (Thinking)', 'Gemini 4 Neon (High)', 'Gemini 4 Neon (XHigh)',
+    'Orchestrator (Neon)', 'GPT-OSS 120B (Medium)', 'claude-opus-4.5', 'gemini-3.5-pro',
+    'gemini-3.5-flash', 'gpt-5.4-mini', 'o3-pro', 'deepseek-r1', 'qwen-3-coder', 'llama-4-maverick',
   ];
   const usageData = (overrideScope = null) => {
     const scope = overrideScope === 'account' || overrideScope === 'local' ? overrideScope : prefs.usageScope;
@@ -478,11 +479,64 @@ test('font sync, scope switching and quota window reference render end-to-end in
     return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
   }`);
 
+  const expectedMergedStressCount = 22;
   await evalJs(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard').firstElementChild.shadowRoot.getElementById('details-tab').click()`);
   await waitUntil(`() => {
     const vs = document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard').firstElementChild.shadowRoot;
-    return vs.getElementById('details').hidden === false && vs.querySelectorAll('#legend button').length === ${stressModelList.length} && vs.querySelectorAll('#table-body tr').length === ${stressModelList.length};
-  }`, 'details tab with 22 model rows visible');
+    return vs.getElementById('details').hidden === false && vs.querySelectorAll('#legend button').length === ${expectedMergedStressCount} && vs.querySelectorAll('#table-body tr').length === ${expectedMergedStressCount};
+  }`, 'details tab with merged thinking-tier model rows visible');
+
+  // Verify thinking tiers merge across legend/chart/table without merging distinct variants/roles,
+  // and hovering a multi-tier table row shows the lightweight tier breakdown tooltip.
+  const tierMergeCheck = await evalJs(`() => {
+    const vs = document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard').firstElementChild.shadowRoot;
+    const legendLabels = [...vs.querySelectorAll('#legend button')].map(b => b.textContent.trim());
+    const flashRow = vs.querySelector('#table-body tr[data-model="gemini 3.8 flash"]');
+    const sonnetRow = vs.querySelector('#table-body tr[data-model="claude sonnet 4.6"]');
+    const gptRow = vs.querySelector('#table-body tr[data-model="gpt 5.4"]');
+    flashRow.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true, clientX: 260 }));
+    const tip = vs.getElementById('tip');
+    const flashTip = {
+      hidden: tip.hidden,
+      title: tip.querySelector('.tip-title')?.textContent || '',
+      tiers: [...tip.querySelectorAll('.tip-model')].map(n => n.textContent.trim()),
+    };
+    flashRow.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+    const hiddenAfterLeave = tip.hidden;
+    sonnetRow.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true, clientX: 260 }));
+    const sonnetTip = {
+      hidden: tip.hidden,
+      title: tip.querySelector('.tip-title')?.textContent || '',
+      tiers: [...tip.querySelectorAll('.tip-model')].map(n => n.textContent.trim()),
+    };
+    sonnetRow.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+    gptRow.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true, clientX: 260 }));
+    const singleTierTipHidden = tip.hidden;
+    gptRow.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+    return {
+      legendLabels,
+      flashTotal: flashRow?.children[1]?.textContent || '',
+      flashTip,
+      sonnetTip,
+      hiddenAfterLeave,
+      singleTierTipHidden,
+    };
+  }`);
+  assert.ok(tierMergeCheck.legendLabels.includes('Gemini 4 Carbon'), 'Carbon high+medium should merge into Gemini 4 Carbon');
+  assert.ok(tierMergeCheck.legendLabels.includes('Gemini 4 Neon'), 'Neon (High)+(XHigh) should merge into Gemini 4 Neon');
+  assert.ok(tierMergeCheck.legendLabels.includes('Gemini 4 Hydrogen'), 'Hydrogen xhigh should normalize to Gemini 4 Hydrogen');
+  assert.ok(tierMergeCheck.legendLabels.includes('Gemini 4 Hydrogen Orchestrator'), 'Orchestrator role must stay distinct from Gemini 4 Hydrogen');
+  assert.ok(tierMergeCheck.legendLabels.includes('Orchestrator (Neon)'), 'Non-tier parenthesized model name must be preserved');
+  assert.ok(tierMergeCheck.legendLabels.includes('GPT-OSS 120B'), 'Hyphenated uppercase model base must be preserved');
+  assert.ok(tierMergeCheck.legendLabels.includes('GPT 5.4') && tierMergeCheck.legendLabels.includes('GPT 5.4 Mini'), 'Mini variant must stay distinct from GPT 5.4');
+  assert.equal(tierMergeCheck.flashTip.hidden, false, 'Multi-tier row hover should show tier breakdown tooltip');
+  assert.ok(tierMergeCheck.flashTip.title.includes('Gemini 3.8 Flash') && tierMergeCheck.flashTip.title.includes('档位分布'), 'Tooltip should show model name and tier heading: ' + tierMergeCheck.flashTip.title);
+  assert.equal(tierMergeCheck.flashTip.tiers.length, 4, 'Gemini 3.8 Flash should list all 4 constituent tiers (High, Medium, Default, Tiered)');
+  assert.ok(tierMergeCheck.flashTip.tiers.some(t => t.startsWith('High')) && tierMergeCheck.flashTip.tiers.some(t => t.startsWith('Medium')) && tierMergeCheck.flashTip.tiers.some(t => t.startsWith('默认')) && tierMergeCheck.flashTip.tiers.some(t => t.startsWith('Tiered')), 'Unexpected tier rows: ' + JSON.stringify(tierMergeCheck.flashTip.tiers));
+  assert.equal(tierMergeCheck.sonnetTip.hidden, false, 'Mixed slug + parenthesized tier should merge into Claude Sonnet 4.6 with 2 tiers');
+  assert.equal(tierMergeCheck.sonnetTip.tiers.length, 2, 'Claude Sonnet 4.6 should show Default + Thinking tiers');
+  assert.equal(tierMergeCheck.hiddenAfterLeave, true, 'Leaving multi-tier row should hide tooltip');
+  assert.equal(tierMergeCheck.singleTierTipHidden, true, 'Single-tier row hover should keep tooltip hidden');
 
   const detailsMetrics = await evalJs(`() => {
     const ud = document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard');
