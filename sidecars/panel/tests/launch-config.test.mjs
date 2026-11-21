@@ -271,3 +271,59 @@ test('RuntimeUi surfaces debug-port-disabled diagnosis on ENOENT and clears it u
   assert.equal('launchConfigured' in ui.health, false);
   await ui.stop();
 });
+
+test('ensureDesktopLaunchConfig discovers and repairs Windows shortcuts on redirected Desktop and OneDrive Desktop', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ag-pulse-win-redirect-'));
+  try {
+    const home = join(root, 'C_Users_demo');
+    const redirectedDesktop = join(root, 'D_Users_demo', 'Desktop');
+    const oneDriveRoot = join(root, 'OneDrive');
+    const oneDriveDesktop = join(oneDriveRoot, 'Desktop');
+    const programs = join(home, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+    const settingsPath = join(root, 'Local', 'settings.json');
+    await Promise.all([
+      mkdir(join(home, 'Desktop'), { recursive: true }),
+      mkdir(redirectedDesktop, { recursive: true }),
+      mkdir(oneDriveDesktop, { recursive: true }),
+      mkdir(programs, { recursive: true }),
+    ]);
+
+    const redirLnk = join(redirectedDesktop, 'Antigravity.lnk');
+    const odLnk = join(oneDriveDesktop, 'Antigravity.lnk');
+    const startLnk = join(programs, 'Antigravity.lnk');
+    await writeFile(redirLnk, buildLnk('C:\\Apps\\Antigravity.exe', ''));
+    await writeFile(odLnk, buildLnk('C:\\Apps\\Antigravity.exe', ''));
+    await writeFile(startLnk, buildLnk('C:\\Apps\\Antigravity.exe', '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1'));
+
+    const updatesSeen = [];
+    const execPowerShell = async updates => {
+      updatesSeen.push(...updates);
+      for (const item of updates) {
+        const info = parseLnkBuffer(await readFile(item.path));
+        await writeFile(item.path, buildLnk(info.target, item.args, info.icon || ''));
+      }
+    };
+
+    const env = { CUSTOM_DISK: join(root, 'D_Users_demo'), OneDrive: oneDriveRoot };
+    const resolveKnownFolders = async () => ({ desktop: '%CUSTOM_DISK%\\Desktop' });
+
+    const before = await inspectDesktopLaunch({ platform: 'win32', home, env, resolveKnownFolders });
+    assert.equal(before.configured, false);
+    assert.deepEqual(new Set(before.entrypoints), new Set([redirLnk, odLnk, startLnk]));
+
+    const repaired = await ensureDesktopLaunchConfig({
+      platform: 'win32', home, env, settingsPath, execPowerShell, resolveKnownFolders,
+    });
+    assert.equal(repaired.configured, true);
+    assert.equal(repaired.repaired, true);
+    assert.deepEqual(new Set(repaired.entrypoints), new Set([redirLnk, odLnk, startLnk]));
+    assert.deepEqual(new Set(updatesSeen.map(u => u.path)), new Set([redirLnk, odLnk]));
+    assert.equal(parseLnkBuffer(await readFile(redirLnk)).args, '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1');
+    assert.equal(parseLnkBuffer(await readFile(odLnk)).args, '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1');
+
+    const after = await inspectDesktopLaunch({ platform: 'win32', home, env, resolveKnownFolders });
+    assert.equal(after.configured, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
