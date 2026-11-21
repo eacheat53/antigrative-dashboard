@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
 import {
   DESKTOP_MANAGED_MARKER,
   MACOS_LAUNCHER_NAME,
@@ -14,6 +15,7 @@ import {
   mergeDebugArguments,
   mergeDesktopEntry,
   parseLnkBuffer,
+  toAsciiJson,
 } from '../../../compat/launch-config.mjs';
 import { RuntimeUi } from '../../../compat/runtime-ui.mjs';
 
@@ -323,6 +325,58 @@ test('ensureDesktopLaunchConfig discovers and repairs Windows shortcuts on redir
 
     const after = await inspectDesktopLaunch({ platform: 'win32', home, env, resolveKnownFolders });
     assert.equal(after.configured, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('toAsciiJson escapes non-ASCII shortcut paths cleanly for Windows PowerShell stdin', () => {
+  const payload = [
+    { path: 'D:\\Users\\张三\\桌面\\Antigravity (代理).lnk', args: '--remote-debugging-port=0' },
+    { path: 'C:\\Users\\Тест\\Desktop\\Antigravity (Прокси).lnk', args: '--remote-debugging-port=0' },
+  ];
+  const serialized = toAsciiJson(payload);
+  assert.equal(/[^\x00-\x7f]/.test(serialized), false, 'serialized payload must be strictly pure ASCII');
+  assert.deepEqual(JSON.parse(serialized), payload);
+});
+
+test('defaultExecPowerShell updates real Windows shortcuts under Chinese folders and filenames', { skip: process.platform !== 'win32' }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ag-pulse-cn-lnk-'));
+  try {
+    const home = join(root, '用户');
+    const cnDesktop = join(home, '桌面');
+    const settingsPath = join(root, 'settings.json');
+    await mkdir(cnDesktop, { recursive: true });
+    const lnkCn = join(cnDesktop, 'Antigravity (代理).lnk');
+    const lnkRu = join(cnDesktop, 'Antigravity (Прокси).lnk');
+    const fakeExe = join(root, 'AntigravityLauncher.exe');
+    await writeFile(fakeExe, '');
+
+    // Create real Windows .lnk files via WScript.Shell so defaultExecPowerShell edits real COM shortcuts.
+    const createScript = [
+      "$ErrorActionPreference = 'Stop'",
+      '[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)',
+      '$items = [Console]::In.ReadToEnd() | ConvertFrom-Json',
+      '$ws = New-Object -ComObject WScript.Shell',
+      'foreach ($it in @($items)) {',
+      '  $s = $ws.CreateShortcut($it.path)',
+      '  $s.TargetPath = [string]$it.target',
+      '  $s.Arguments = ""',
+      '  $s.Save()',
+      '}',
+    ].join('\n');
+    await new Promise((resolve, reject) => {
+      const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(createScript, 'utf16le').toString('base64')],
+        { windowsHide: true, timeout: 15000 }, err => (err ? reject(err) : resolve()));
+      child.stdin.end(toAsciiJson([{ path: lnkCn, target: fakeExe }, { path: lnkRu, target: fakeExe }]), 'ascii');
+    });
+
+    const resolveKnownFolders = async () => ({ desktop: cnDesktop });
+    const repaired = await ensureDesktopLaunchConfig({ platform: 'win32', home, env: {}, settingsPath, resolveKnownFolders });
+    assert.equal(repaired.configured, true, 'real PowerShell update must succeed for Chinese/Unicode shortcut paths');
+    assert.equal(repaired.repaired, true);
+    assert.equal(parseLnkBuffer(await readFile(lnkCn)).args, '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1');
+    assert.equal(parseLnkBuffer(await readFile(lnkRu)).args, '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -612,9 +612,15 @@ export async function inspectDesktopLaunch({ platform = process.platform, home =
   return { configured: false, supported: false, entrypoints: [] };
 }
 
+export function toAsciiJson(value) {
+  return JSON.stringify(value).replace(/[^\x00-\x7f]/g, ch => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 function defaultExecPowerShell(updates) {
   const script = [
     "$ErrorActionPreference = 'Stop'",
+    '[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)',
+    '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)',
     '$payload = [Console]::In.ReadToEnd() | ConvertFrom-Json',
     '$ws = New-Object -ComObject WScript.Shell',
     'foreach ($u in @($payload)) {',
@@ -628,8 +634,8 @@ function defaultExecPowerShell(updates) {
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   return new Promise((resolvePromise, rejectPromise) => {
     const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-      { windowsHide: true, timeout: 10000 }, error => (error ? rejectPromise(error) : resolvePromise()));
-    child.stdin.end(JSON.stringify(updates), 'utf8');
+      { windowsHide: true, timeout: 15000 }, error => (error ? rejectPromise(error) : resolvePromise()));
+    child.stdin.end(toAsciiJson(updates), 'ascii');
   });
 }
 

@@ -406,6 +406,8 @@ def write_windows_shortcut_args(updates, runner=subprocess.run):
         return
     script = (
         "$ErrorActionPreference = 'Stop'\n"
+        "[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)\n"
+        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n"
         "$payload = [Console]::In.ReadToEnd() | ConvertFrom-Json\n"
         "$ws = New-Object -ComObject WScript.Shell\n"
         "foreach ($u in @($payload)) {\n"
@@ -417,7 +419,7 @@ def write_windows_shortcut_args(updates, runner=subprocess.run):
         "}\n"
     )
     encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
-    kwargs = {'input': json.dumps(updates), 'text': True, 'encoding': 'utf-8', 'timeout': 15, 'check': True}
+    kwargs = {'input': json.dumps(updates, ensure_ascii=True), 'text': True, 'encoding': 'utf-8', 'timeout': 15, 'check': True}
     if os.name == 'nt':
         kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     runner(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], **kwargs)
