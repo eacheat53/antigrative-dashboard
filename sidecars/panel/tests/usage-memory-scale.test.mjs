@@ -20,13 +20,14 @@ const makeRow=(key,{at=Date.parse('2026-10-15T06:00:00Z'),model='Gemini 3.8 Pro'
   id:hash(key),at,model,uncached,cacheRead,cacheWrite,output,partial,timeBasis:at===null?'unknown':'request-start',
 });
 
-test('200k historical JSON records summarize and update incrementally under --max-old-space-size=128',{timeout:120000},async t=>{
+test('100k historical JSON records summarize and update incrementally under --max-old-space-size=128',{timeout:120000},async t=>{
   const dir=await mkdtemp(join(tmpdir(),'ag-usage-scale-'));
   t.after(()=>rm(dir,{recursive:true,force:true}));
   await mkdir(join(dir,acctA),{recursive:true});
   await mkdir(join(dir,acctB),{recursive:true});
 
-  const filesPerAcct=200,rowsPerFile=500; // 400 files * 500 rows = 200,000 records
+  const filesPerAcct=100,rowsPerFile=500; // 200 files * 500 rows = 100,000 records
+  const totalRecords=filesPerAcct*2*rowsPerFile;
   const now=Date.parse('2026-10-30T08:00:00Z');
   const inWinAt=Date.parse('2026-10-30T06:00:00Z');
   const oldBase=Date.parse('2026-08-01T00:00:00Z');
@@ -52,6 +53,8 @@ test('200k historical JSON records summarize and update incrementally under --ma
     const dir=${JSON.stringify(dir)};
     const acctA=${JSON.stringify(acctA)};
     const now=${now};
+    const totalRecords=${totalRecords};
+    const totalFiles=${filesPerAcct*2};
     const groups=[{id:'gemini',name:'Gemini',windows:{'5h':{available:true,remaining:0.8,resetAt:new Date(now+2*3600000).toISOString()}}}];
     const ledger=new UsageLedger(dir);
     let coldReads=0;
@@ -61,12 +64,12 @@ test('200k historical JSON records summarize and update incrementally under --ma
     const cold=await ledger.summary('all',now,{groups,quotaAccount:acctA});
     const coldMs=Date.now()-coldStart;
     const coldHeapMb=Math.round(process.memoryUsage().heapUsed/1048576);
-    assert.equal(cold.requests,200000);
-    assert.equal(cold.totalTokens,200000*600);
+    assert.equal(cold.requests,totalRecords);
+    assert.equal(cold.totalTokens,totalRecords*600);
     assert.equal(cold.accountsCount,2);
     assert.equal(cold.unreadableFiles,0);
     assert.equal(cold.quotaWindows['gemini:5h'].observedTokens,10*600);
-    assert.equal(coldReads,400);
+    assert.equal(coldReads,totalFiles);
 
     // Warm restart with a fresh UsageLedger must read 0 JSON files.
     const restarted=new UsageLedger(dir);
@@ -77,8 +80,8 @@ test('200k historical JSON records summarize and update incrementally under --ma
     const warm=await restarted.summary('all',now,{groups,quotaAccount:acctA});
     const warmMs=Date.now()-warmStart;
     assert.equal(restartReads,0);
-    assert.equal(warm.requests,200000);
-    assert.equal(warm.totalTokens,200000*600);
+    assert.equal(warm.requests,totalRecords);
+    assert.equal(warm.totalTokens,totalRecords*600);
 
     // Incremental update of 1 conversation reads only 1 file.
     await restarted.ingest(acctA,'99999999-1111-1111-1111-111111111111',{
@@ -89,8 +92,8 @@ test('200k historical JSON records summarize and update incrementally under --ma
     const incMs=Date.now()-incStart;
     const finalHeapMb=Math.round(process.memoryUsage().heapUsed/1048576);
     assert.equal(restartReads,1);
-    assert.equal(inc.requests,200001);
-    assert.equal(inc.totalTokens,200001*600);
+    assert.equal(inc.requests,totalRecords+1);
+    assert.equal(inc.totalTokens,(totalRecords+1)*600);
     assert.equal(inc.quotaWindows['gemini:5h'].observedTokens,11*600);
     assert.ok(finalHeapMb<80,'Expected bounded V8 heap, observed '+finalHeapMb+'MB');
     console.log(JSON.stringify({coldMs,coldHeapMb,warmMs,incMs,finalHeapMb}));

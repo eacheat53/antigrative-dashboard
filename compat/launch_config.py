@@ -264,6 +264,8 @@ def _expand_windows_env(value, env):
     expanded = re.sub(r'%([^%]+)%', replace, value.strip())
     if not expanded or re.search(r'%[^%]+%', expanded):
         return None
+    if os.name != 'nt' and expanded.startswith('/'):
+        expanded = expanded.replace('\\', '/')
     return expanded
 
 

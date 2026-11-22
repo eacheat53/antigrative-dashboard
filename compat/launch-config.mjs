@@ -260,6 +260,7 @@ function expandWindowsEnv(value, env = {}) {
   }
   const expanded = value.trim().replace(/%([^%]+)%/g, (match, name) => upper.get(name.toUpperCase()) ?? match);
   if (!expanded || /%[^%]+%/.test(expanded)) return null;
+  if (process.platform !== 'win32' && expanded.startsWith('/')) return expanded.replace(/\\/g, '/');
   return expanded;
 }
 

@@ -10,7 +10,7 @@ import zipfile
 
 LARGE_CONVERSATION_MODULES = tuple('sidecars/panel/' + name + '.mjs' for name in (
     'collection-state', 'background-statistics', 'background-worker',
-    'disk-statistics', 'usage-disk-worker',
+    'disk-statistics', 'usage-disk-worker', 'usage-index',
 ))
 IDE_RUNTIME_MODULES = tuple('ide/' + name for name in (
     'main.mjs', 'runtime.mjs', 'webview-targets.mjs', 'client.mjs',
