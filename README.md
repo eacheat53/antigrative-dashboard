@@ -7,16 +7,16 @@
 Token throughput, cache hits and context usage in the model selector row. Hover over context for pace forecasts, window usage and five-hour / weekly quotas too.<br>
 Keep the summary visible. Hover for the details.
 
-[![Version 0.9.8](https://img.shields.io/badge/version-0.9.8-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
+[![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
 [![Platforms](https://img.shields.io/badge/host-Windows%20%7C%20Linux%20%7C%20macOS-83d8b9?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
-[![Antigravity 2.33.0](https://img.shields.io/badge/Antigravity-2.33.0-c5a0ff?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
+[![Antigravity 2.34.0](https://img.shields.io/badge/Antigravity-2.34.0-c5a0ff?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
 [![MIT](https://img.shields.io/badge/license-MIT-d4d9e6?style=flat-square&labelColor=252936)](LICENSE)
 
 [Preview](#preview) · [IDE](#antigravity-ide) · [CLI](#antigravity-cli-status-line) · [Install](#install) · [Enable or remove](#plug-and-unplug) · [Compatibility](#compatibility) · [FAQ](#faq) · [中文](README.zh-CN.md)
 
 </div>
 
-**v0.9.8:** Completely removes the Neon (氖龙) mascot Easter egg and toggle so standard downloads and in-app updates stay clean and lightweight, while retaining all v0.9.6 macOS launcher ergonomics and v0.9.5 memory/backfill improvements (users who want the Neon Easter Egg can use [v0.9.7](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.7)). [Release notes](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.8) · [Compatibility](COMPATIBILITY.md).
+**v1.0.0:** Independent fork release (`eacheat53/antigrative-dashboard`) with chat-header transcript export, segmented context occupancy breakdown & custom limit override, in-app updates pointed at `eacheat53/antigrative-dashboard`, and ported Antigravity 2.34.0 / SQLite usage index / inline persistence fixes. [Release notes](https://github.com/eacheat53/antigrative-dashboard/releases/tag/v1.0.0) · [Compatibility](COMPATIBILITY.md).
 
 ## Preview
 

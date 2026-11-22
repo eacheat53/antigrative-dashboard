@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0 — 2026-11-22
+
+- Switch in-app **Check for updates** (`compat/update-worker.py` and `tests/test_update_worker.py`) to `eacheat53/antigrative-dashboard`.
+- Add chat-header selective conversation transcript export (`compat/export-ui.cjs`, `sidecars/panel/exporter.mjs`) and port mini context occupancy breakdown with threshold coloring and persistent `contextLimitOverride` into `#context-card`.
+- Selectively port upstream stability, performance, and protocol fixes (`v0.9.9`–`v0.9.14`):
+  - Antigravity 2.34.0 sidecar CSRF credential fallback and transcript fallback (`ide/client.mjs`, `sidecars/panel/client.mjs`, `sidecars/panel/transcript.mjs`).
+  - Persistent SQLite usage index (`sidecars/panel/usage-index.mjs`), non-blocking cold-start index wait, active summary cache retention, and hybrid quota capacity estimator (`sidecars/panel/quota-estimator.mjs`).
+  - Inline widget resilience across transient bridge timeouts/reconnects (`compat/runtime-ui.mjs`, `compat/inline-widget.cjs`) and localize() dynamic chip title protection.
+  - Model thinking-tier merging (`compat/usage-ui.cjs`), quota-window usage anti-flicker, and Windows discovery, `AntigravityLauncher.exe`, redirected Desktop/Programs, and non-ASCII shortcut path fixes (`compat/launch-config.mjs`, `compat/launch_config.py`).
+
 ## 0.9.8 — 2026-11-19
 
 - Completely remove the Neon (氖龙) plush mascot Easter egg code, embedded WebP assets, and toggles from the standard release (`antigrative-dashboard-0.9.8.zip` and `antigrative-dashboard-ide-0.9.8.vsix`), keeping default downloads and in-app updates clean and lightweight while preserving all v0.9.6 macOS launcher ergonomics and v0.9.5 memory/backfill optimizations. Users who want the Neon Easter Egg can continue using the dedicated `v0.9.7` release.

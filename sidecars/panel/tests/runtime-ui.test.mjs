@@ -300,6 +300,21 @@ test('runtime bridge samples host fonts into rendererTheme, allows usageScope an
   await ui.stop();
   assert.deepEqual(ui.rendererTheme,{});
 });
+
+test('runtime bridge forwards export-list and export requests only from trusted contexts', async () => {
+  const { ui, connections } = fixture();
+  const seen = [];
+  ui.exportList = async input => { seen.push(['list', input]); return { defaultDir: '/tmp/exp', conversations: [{ id: '11111111-2222-3333-4444-555555555555', title: 'Demo' }] }; };
+  ui.runExport = async input => { seen.push(['export', input]); return { ok: true, dir: '/tmp/exp', files: [{ path: '/tmp/exp/demo.md' }] }; };
+  await ui.tick();
+  const c = connections[0];
+  await ui.event(c, { method: 'Runtime.bindingCalled', params: { name: '__agPulseRuntimeCallV4', executionContextId: 9, payload: JSON.stringify({ id: 1, type: 'export-list', input: {} }) } });
+  assert.equal(seen.length, 0);
+  await ui.event(c, { method: 'Runtime.bindingCalled', params: { name: '__agPulseRuntimeCallV4', executionContextId: 7, payload: JSON.stringify({ id: 2, type: 'export-list', input: { conversationId: '11111111-2222-3333-4444-555555555555' } }) } });
+  await ui.event(c, { method: 'Runtime.bindingCalled', params: { name: '__agPulseRuntimeCallV4', executionContextId: 7, payload: JSON.stringify({ id: 3, type: 'export', input: { ids: ['11111111-2222-3333-4444-555555555555'], format: 'md', save: true } }) } });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0][0], 'list');
+  assert.equal(seen[1][0], 'export');
   assert.ok(c.calls.some(call => call.params.expression?.includes('/tmp/exp/demo.md')));
   await ui.stop();
 });

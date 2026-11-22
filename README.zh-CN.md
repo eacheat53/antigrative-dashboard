@@ -7,16 +7,16 @@
 模型选择旁只显示生成速率、缓存和上下文占用；悬停上下文，一并查看消耗预测、周期用量与 5 小时 / 周额度详情。<br>
 缩略信息常驻；鼠标悬停，才展开详细统计。
 
-[![Version 0.9.8](https://img.shields.io/badge/version-0.9.8-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
+[![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
 [![Platforms](https://img.shields.io/badge/host-Windows%20%7C%20Linux%20%7C%20macOS-83d8b9?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
-[![Antigravity 2.33.0](https://img.shields.io/badge/Antigravity-2.33.0-c5a0ff?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
+[![Antigravity 2.34.0](https://img.shields.io/badge/Antigravity-2.34.0-c5a0ff?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
 [![MIT](https://img.shields.io/badge/license-MIT-d4d9e6?style=flat-square&labelColor=252936)](LICENSE)
 
 [看看效果](#看看效果) · [IDE](#antigravity-ide) · [CLI](#antigravity-cli-状态栏) · [开始安装](#安装) · [启用与停用](#可插拔) · [兼容性](#兼容性) · [常见问题](#常见问题)
 
 </div>
 
-**v0.9.8：** 彻底移除 Neon（氖龙）彩蛋代码、内嵌资源与开关，让默认下载与应用内更新恢复纯净轻量，并保留 v0.9.6 macOS 启动器与 v0.9.5 内存/历史补录优化（需要氖龙彩蛋的用户可使用专属 [v0.9.7 彩蛋版](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.7)）。[发布说明](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.8) · [兼容性](COMPATIBILITY.md)。
+**v1.0.0：** 独立分支首个正式版本（`eacheat53/antigrative-dashboard`），集成对话头部转录导出、分段式上下文占用卡片与自定义上下文上限、`Check for updates` 切换至当前仓库，并合入上游 2.34.0 适配、SQLite 用量索引及内联栏防消失等稳定性修复。[发布说明](https://github.com/eacheat53/antigrative-dashboard/releases/tag/v1.0.0) · [兼容性](COMPATIBILITY.md)。
 
 ## 看看效果
 
