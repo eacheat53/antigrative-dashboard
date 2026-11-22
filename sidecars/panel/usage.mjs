@@ -9,7 +9,7 @@ import {discoverLocalConversations,conversationId} from './local-conversations.m
 import {setImmediate as yieldToLiveRequests} from 'node:timers/promises';
 import {delegatedIds} from './delegation.mjs';
 import {collectionFailure} from './collection-state.mjs';
-import {syncAndSummarizeIndex} from './usage-index.mjs';
+import {syncAndSummarizeIndex,indexExists} from './usage-index.mjs';
 import {QuotaEstimator} from './quota-estimator.mjs';
 const HASH=/^[a-f0-9]{64}$/,GUID=/^[a-f0-9-]{36}$/i;
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -380,6 +380,23 @@ export class UsageLedger{
       this.startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,{buckets:allBuckets?bucketNames:null,quotaAccount,groupInfos,specs,cacheTag});
       return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
     }
+    // Never open the shared SQLite index on the main thread while a worker is
+    // already updating it, and offload cold bulk builds during foreground polls
+    // so main-thread SQLite cannot block live metrics or CDP heartbeats.
+    if(maxWaitMs>0&&this.diskSummaryPending){
+      return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
+    }
+    if(maxWaitMs>0&&this.readSummaryRecord===UsageLedger.prototype.readSummaryRecord){
+      let totalFiles=0;
+      for(const entry of bucketEntries){
+        for(const name of entry.files)if(/^[a-f0-9]{64}\.json$/.test(name))totalFiles++;
+      }
+      if(totalFiles>16&&!(await indexExists(this.directory))){
+        if(!isCurrent())return null;
+        this.startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,{buckets:allBuckets?bucketNames:null,quotaAccount,groupInfos,specs,cacheTag});
+        return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
+      }
+    }
     const pendingKey=cacheKey+'@'+scanRevision;
     let scan=this.jsonSummaryPending.get(pendingKey);
     if(!scan){
@@ -400,6 +417,7 @@ export class UsageLedger{
           readRecord:file=>this.readSummaryRecord(file),
           dirtyFiles:dirtySnapshot,
           yieldEveryMs:8,
+          busyTimeoutMs:250,
         });
         const next=this._indexQueue.catch(()=>{}).then(runIndex);
         this._indexQueue=next.catch(()=>{});
@@ -423,17 +441,23 @@ export class UsageLedger{
     let value;
     if(maxWaitMs>0){
       let timer;
-      const raced=await Promise.race([
-        scan.then(v=>({done:true,value:v})),
-        new Promise(resolve=>{timer=setTimeout(()=>resolve({done:false}),maxWaitMs);timer.unref?.();}),
-      ]);
-      clearTimeout(timer);
-      if(!raced.done){
-        scan.catch(()=>{});
+      try{
+        const raced=await Promise.race([
+          scan.then(v=>({done:true,value:v})),
+          new Promise(resolve=>{timer=setTimeout(()=>resolve({done:false}),maxWaitMs);timer.unref?.();}),
+        ]);
+        if(!raced.done){
+          scan.catch(()=>{});
+          if(!isCurrent())return null;
+          return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
+        }
+        value=raced.value;
+      }catch{
         if(!isCurrent())return null;
         return fallbackCached?{...finalize(fallbackCached.value,!cached,false),summaryStale:true}:unknown();
+      }finally{
+        clearTimeout(timer);
       }
-      value=raced.value;
     }else{
       value=await scan;
     }
@@ -841,10 +865,10 @@ export class DesktopUsage{
     }
     const ledgerTarget=requestedScope==='account'?identity:'all';
     const value=await this.ledger.summary(ledgerTarget,Date.now(),{isCurrent:current,groups:identity?groups:null,quotaAccount:identity,preferCachedMaxAgeMs:backfillActive?5000:0,maxWaitMs});if(!current())return null;
-    if(scope!==undefined&&!syncing&&!value?.summaryStale&&identity&&!this.ledger.diskSummaryPending&&!this.ledger.usageWrites.size){
+    if(scope!==undefined&&!syncing&&!value?.summaryStale&&identity&&!this.ledger.diskSummaryPending&&!this.ledger.jsonSummaryPending.size&&!this.ledger.usageWrites.size){
       const otherScope=requestedScope==='local'?identity:'all';
       const prefix=otherScope+':'+value.today;
-      if(![...this.ledger.caches.keys()].some(k=>k.startsWith(prefix)))void this.ledger.summary(otherScope,Date.now(),{isCurrent:current,groups,quotaAccount:identity}).catch(()=>{});
+      if(![...this.ledger.caches.keys()].some(k=>k.startsWith(prefix)))void this.ledger.summary(otherScope,Date.now(),{isCurrent:current,groups,quotaAccount:identity,maxWaitMs:350}).catch(()=>{});
     }
     const stillSyncing=syncing||value?.summaryStale===true;
     return {...value,scope:requestedScope,accountKey:requestedScope==='local'?'all-local':identity,activeAccountKey:identity||null,accountAvailable:Boolean(identity),syncing:stillSyncing,status:stillSyncing?'syncing':this.status,missingConversations:this.missingConversations,confirmedMissingConversations:this.confirmedMissingConversations,retryingConversations:this.retryingConversations,persistenceError:this.store.usagePersistenceError===true||this.ledger.diskSummaryError===true};

@@ -66,24 +66,38 @@ export function indexWeekStart(date){
   return d.toISOString().slice(0,10);
 }
 
-function applyPragmas(db){
+function applyPragmas(db,busyTimeoutMs=5000){
+  const busy=Number.isSafeInteger(busyTimeoutMs)&&busyTimeoutMs>=0?busyTimeoutMs:5000;
   db.exec(
     'PRAGMA journal_mode=DELETE;' +
     'PRAGMA synchronous=NORMAL;' +
     'PRAGMA temp_store=FILE;' +
     'PRAGMA cache_size=-8192;' +
     'PRAGMA mmap_size=0;' +
-    'PRAGMA busy_timeout=5000;' +
+    `PRAGMA busy_timeout=${busy};` +
     'PRAGMA max_page_count=262144;'
   );
 }
 
+const ROW_INDEX_SQLS=[
+  'CREATE INDEX IF NOT EXISTS idx_source_rows_req ON source_rows(request_id, total DESC, source_id ASC);',
+  'CREATE INDEX IF NOT EXISTS idx_source_rows_acct_req ON source_rows(account, request_id, total DESC, source_id ASC);',
+  'CREATE INDEX IF NOT EXISTS idx_source_rows_at ON source_rows(at) WHERE at IS NOT NULL;',
+];
+
 function createRowIndexes(db){
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_source_rows_req ON source_rows(request_id, total DESC, source_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_source_rows_acct_req ON source_rows(account, request_id, total DESC, source_id ASC);
-    CREATE INDEX IF NOT EXISTS idx_source_rows_at ON source_rows(at) WHERE at IS NOT NULL;
-  `);
+  for(const sql of ROW_INDEX_SQLS)db.exec(sql);
+}
+
+async function createRowIndexesCooperative(db,{yieldEveryMs=0,onCheck=null}={}){
+  for(const sql of ROW_INDEX_SQLS){
+    onCheck?.();
+    if(yieldEveryMs>0){
+      await yieldToEventLoop();
+      onCheck?.();
+    }
+    db.exec(sql);
+  }
 }
 
 function dropRowIndexes(db){
@@ -168,19 +182,23 @@ async function unlinkIndexFiles(indexPath){
   }
 }
 
-async function openIndexDb(directory,timeZone){
+function isLockError(error){
+  return error?.errcode===5||error?.errcode===6||/locked|busy/i.test(String(error?.message||error?.errstr||''));
+}
+
+async function openIndexDb(directory,timeZone,{busyTimeoutMs=5000}={}){
   await mkdir(directory,{recursive:true});
   const indexPath=join(directory,INDEX_FILENAME);
   for(let attempt=0;attempt<2;attempt++){
     let db=null;
     try{
       db=new DatabaseSync(indexPath);
-      applyPragmas(db);
+      applyPragmas(db,busyTimeoutMs);
       ensureSchema(db,timeZone);
       return db;
     }catch(error){
       if(db){try{db.close();}catch{}}
-      if(attempt===0){
+      if(attempt===0&&!isLockError(error)){
         await unlinkIndexFiles(indexPath);
         continue;
       }
@@ -257,7 +275,7 @@ async function discoverBuckets(directory,scope,buckets){
   return out;
 }
 
-async function indexExists(directory){
+export async function indexExists(directory){
   try{return (await lstat(join(directory,INDEX_FILENAME))).isFile();}catch{return false;}
 }
 
@@ -277,6 +295,7 @@ export async function syncAndSummarizeIndex({
   dirtyFiles=null,
   onCheck=null,
   yieldEveryMs=0,
+  busyTimeoutMs=yieldEveryMs>0?250:5000,
 }){
   const allBuckets=scope==='all';
   const specs=Array.isArray(quotaWindowSpecs)?quotaWindowSpecs:[];
@@ -308,7 +327,7 @@ export async function syncAndSummarizeIndex({
     return emptySummary({allBuckets,scope,timeZone,today,now,source,hasSpecs:specs.length>0});
   }
 
-  const db=await openIndexDb(directory,timeZone);
+  const db=await openIndexDb(directory,timeZone,{busyTimeoutMs});
   try{
     const deleteRowsBySource=db.prepare('DELETE FROM source_rows WHERE source_id=?');
     const deleteFileBySource=db.prepare('DELETE FROM source_files WHERE source_id=?');
@@ -572,7 +591,7 @@ export async function syncAndSummarizeIndex({
       }
     }
     }finally{
-      if(bulkBuild)createRowIndexes(db);
+      if(bulkBuild)await createRowIndexesCooperative(db,{yieldEveryMs,onCheck});
     }
 
     if(touchedAccounts.size){
@@ -586,6 +605,10 @@ export async function syncAndSummarizeIndex({
     }
 
     onCheck?.();
+    if(yieldEveryMs>0){
+      await yieldToEventLoop();
+      onCheck?.();
+    }
 
     const cachedAggRow=db.prepare('SELECT payload FROM scope_summary_cache WHERE scope=? AND time_zone=?').get(scope,timeZone);
     let days,models,unknownTokens,unknownRequests,partialRequests,totalRequests,unreadable,accountsCount;
@@ -699,6 +722,10 @@ export async function syncAndSummarizeIndex({
 
     let quotaWindowCounts;
     if(specs.length){
+      if(yieldEveryMs>0){
+        await yieldToEventLoop();
+        onCheck?.();
+      }
       quotaWindowCounts={};
       if(quotaAccount&&typeof classifyQuotaGroupId==='function'){
         let minStart=Infinity,maxEnd=-Infinity;

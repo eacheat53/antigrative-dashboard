@@ -106,22 +106,26 @@ export class CdpConnection {
 // Only sanitized metrics cross the bridge. No API credential or conversation text is exposed.
 function rendererBridge(binding, allowNested = false) {
   if (window !== window.top && !allowNested) return;
-  if (window.__agPulseRuntimeBridge && window.agPulseHost) return;
+  if (window.__agPulseRuntimeBridge && window.agPulseHost) {
+    if (window.__agPulseRuntimeBridge.binding === binding) window.__agPulseRuntimeBridge.reconnect();
+    return;
+  }
   window.__agPulseRuntimeBridge?.dispose();
   const pending = new Map(); let sequence = 0;
-  const empty = () => ({ connection: 'offline', error: '等待 Antigrative Dashboard 重新连接', speed: null, groups: [], enabled: false });
+  const transient = () => ({ connection: 'offline', error: '等待 Antigrative Dashboard 重新连接', speed: null, groups: [], transient: true });
+  const disposed = () => ({ connection: 'offline', error: '等待 Antigrative Dashboard 重新连接', speed: null, groups: [], enabled: false });
   const call = (type, input) => new Promise(resolve => {
-    if (pending.size >= 8) { resolve(empty()); return; }
+    if (pending.size >= 8) { resolve(transient()); return; }
     const id = ++sequence;
-    const timer = setTimeout(() => { pending.delete(id); resolve(empty()); }, 15000);
+    const timer = setTimeout(() => { pending.delete(id); resolve(transient()); }, 15000);
     pending.set(id, { resolve, timer });
-    try { window[binding](JSON.stringify({ id, type, input })); } catch { clearTimeout(timer); pending.delete(id); resolve(empty()); }
+    try { window[binding](JSON.stringify({ id, type, input })); } catch { clearTimeout(timer); pending.delete(id); resolve(transient()); }
   });
   window.__agPulseRuntimeBridge = {
     binding,
     resolve(id, result) { const item = pending.get(id); if (!item) return; clearTimeout(item.timer); pending.delete(id); item.resolve(result); },
-    reconnect() { for(const item of pending.values()){clearTimeout(item.timer);item.resolve({connection:'offline',error:'等待 Antigrative Dashboard 重新连接',speed:null,groups:[]});}pending.clear(); },
-    dispose() { for (const item of pending.values()) { clearTimeout(item.timer); item.resolve(empty()); } pending.clear(); delete window.__agPulseRuntimeBridge; },
+    reconnect() { for(const item of pending.values()){clearTimeout(item.timer);item.resolve(transient());}pending.clear(); },
+    dispose() { for (const item of pending.values()) { clearTimeout(item.timer); item.resolve(disposed()); } pending.clear(); delete window.__agPulseRuntimeBridge; },
   };
   if (!window.agPulseHost) window.agPulseHost = {
     getMetrics: input => call('metrics', input),
@@ -208,11 +212,17 @@ export class RuntimeUi {
     if (message.method === 'Runtime.executionContextDestroyed') { if(connection.contexts.has(p.executionContextId))connection.generation++;connection.contexts.delete(p.executionContextId);connection.contextCandidates.delete(p.executionContextId);return; }
     if (message.method !== 'Runtime.bindingCalled' || p.name !== this.binding || !connection.contexts.has(p.executionContextId)) return;
     if(!await this.owns()||connection.closed||connection.revoked||!connection.contexts.has(p.executionContextId))return;
-    if (typeof p.payload !== 'string' || p.payload.length > 8192 || connection.inflight >= 8) return;
+    if (typeof p.payload !== 'string' || p.payload.length > 8192) return;
     let input;
     try { input = JSON.parse(p.payload); if (!Number.isSafeInteger(input.id) || input.id < 1) return; } catch { return; }
     const generation=connection.generation;
     const current=()=>!connection.closed&&!connection.revoked&&connection.generation===generation&&connection.contexts.has(p.executionContextId);
+    if (connection.inflight >= 8) {
+      if (input.type === 'diagnostic' || this.stopping || !current()) return;
+      const busy = input.type === 'preferences' ? { error: 'Language preference could not be saved or read' } : { ...offline('等待 Antigrative Dashboard 重新连接'), transient: true };
+      try { await connection.command('Runtime.evaluate', { expression: this.rendererGuard('window.__agPulseRuntimeBridge?.resolve(' + input.id + ',' + JSON.stringify(busy) + ')'), contextId: p.executionContextId }); } catch {}
+      return;
+    }
     connection.inflight++;
     try {
       let result = {};
@@ -244,7 +254,7 @@ export class RuntimeUi {
       if(this.stopping||!await this.owns()||!current())return;
       await connection.command('Runtime.evaluate', { expression: this.rendererGuard('window.__agPulseRuntimeBridge?.resolve(' + input.id + ',' + JSON.stringify(result) + ')'), contextId: p.executionContextId });
     } catch (error) {
-      const failure=input.type==='preferences'?{error:'Language preference could not be saved or read'}:(input.type==='export'||input.type==='export-list')?{ok:false,error:error?.message||'Export failed'}:offline('等待 Antigrative Dashboard 重新连接');
+      const failure=input.type==='preferences'?{error:'Language preference could not be saved or read'}:(input.type==='export'||input.type==='export-list')?{ok:false,error:error?.message||'Export failed'}:{...offline('等待 Antigrative Dashboard 重新连接'),transient:true};
       if(this.stopping||!await this.owns()||!current())return;
       try { await connection.command('Runtime.evaluate', { expression: this.rendererGuard('window.__agPulseRuntimeBridge?.resolve(' + input.id + ',' + JSON.stringify(failure) + ')'), contextId: p.executionContextId }); } catch { /* The next poll reconnects. */ }
     } finally { connection.inflight--; }
@@ -257,7 +267,7 @@ export class RuntimeUi {
     connection.ideWebview=target.ideWebview===true;
     connection.parentFrameId=target.expectedParentId;
     connection.proofKey=target.ideWebview?JSON.stringify([target.expectedFrameId,target.expectedParentId,target.expectedUrl,target.workbenchId]):null;
-    connection.generation=0;connection.revoked=false;
+    connection.generation=0;connection.revoked=false;connection.heartbeatFailures=0;
     connection.retiredContexts=new Set();
     connection.contexts = new Set();connection.contextCandidates=new Map(); connection.inflight = 0; connection.mounted = false;
     try {
@@ -326,6 +336,7 @@ export class RuntimeUi {
             expression: '(()=>{const mounted=Boolean(document.getElementById("ag-pulse-status-bar")?.isConnected),installed=Boolean(window.__agPulseInlineInstalled),bridge=Boolean(window.__agPulseRuntimeBridge && window.agPulseHost'+(this.owner?' && window.__agPulseRuntimeBridge.binding==='+JSON.stringify(this.binding):'')+');let fontFamily=null,monoFontFamily=null;try{const pick=(els,vars)=>{for(const el of els){if(!el)continue;for(const v of vars){const s=(el.style?.getPropertyValue?.(v)||getComputedStyle(el).getPropertyValue(v)||"").trim();if(s)return s;}}return null;};const base=[document.querySelector(\'[data-testid="model-selector-trigger"], .rounded-composer, .monaco-workbench\'),document.body,document.documentElement];fontFamily=pick(base,[\'--ui-font-family\',\'--font-sans\',\'--font-family\',\'--vscode-font-family\',\'--antigravity-font-family\']);if(!fontFamily){for(const el of base){if(!el||el.hasAttribute?.("data-ag-pulse-bar"))continue;const f=getComputedStyle(el).fontFamily;if(f){fontFamily=f;break;}}}monoFontFamily=pick(base,[\'--vscode-editor-font-family\',\'--font-mono\']);}catch{}return {mounted,installed,bridge,fontFamily,monoFontFamily};})()' });
           if(result.exceptionDetails)throw new Error('Renderer document is not ready');
           const status = result.result?.value;
+          connection.heartbeatFailures = 0;
           connection.mounted = status?.mounted === true;
           if(!connection.ideWebview&&(status?.fontFamily||status?.monoFontFamily))sampledTheme={fontFamily:status.fontFamily||undefined,monoFontFamily:status.monoFontFamily||undefined};
           else if(!sampledTheme.fontFamily&&!sampledTheme.monoFontFamily&&(status?.fontFamily||status?.monoFontFamily))sampledTheme={fontFamily:status.fontFamily||undefined,monoFontFamily:status.monoFontFamily||undefined};
@@ -336,10 +347,17 @@ export class RuntimeUi {
             const recovery = await connection.command('Runtime.evaluate', { expression: connection.guardedSource });
             if (recovery.exceptionDetails) throw new Error('Widget recovery failed');
           }
-        } catch {
-          // Navigation failures must not accumulate a preload on each retry.
-          try{if(connection.script)await connection.command('Page.removeScriptToEvaluateOnNewDocument',{identifier:connection.script});}catch{}
-          await this.detach(connection);this.sessions.delete(url);
+        } catch (error) {
+          // A single transient heartbeat timeout (renderer/sidecar busy) must not
+          // tear down a live mounted desktop widget.
+          if (!connection.ideWebview && !connection.closed && !connection.revoked && error?.message === 'Renderer command timeout') {
+            connection.heartbeatFailures = (connection.heartbeatFailures || 0) + 1;
+            if (connection.heartbeatFailures < 2) continue;
+          }
+          // Navigation or repeated heartbeat failures must not accumulate preloads.
+          // For desktop main pages, reconnect cleanly without disposing the live UI.
+          await this.detach(connection, { disposeUi: connection.ideWebview });
+          this.sessions.delete(url);
         }
       }
       this.rendererTheme={};
@@ -365,18 +383,18 @@ export class RuntimeUi {
     }
     finally { this.busy = false; }
   }
-  async detach(connection) {
+  async detach(connection, { disposeUi = true } = {}) {
     // Retired contexts remain cleanup-only: a same-document route change can
     // leave timers and pending bridge calls alive after authorization is revoked.
     const owned=await this.owns();
-    if(owned){
+    if(disposeUi&&owned){
       const ids=connection.ideWebview?[...new Set([...connection.contexts,...connection.retiredContexts])]:[undefined];
       for(const contextId of ids)try{
         await connection.command('Runtime.evaluate',{expression:this.rendererGuard('window.__agPulseDispose?.();window.__agPulseRuntimeBridge?.dispose();delete window.agPulseHost;'),...(contextId===undefined?{}:{contextId})});
       }catch{/* Destroyed contexts need no cleanup; still remove the preload/binding. */}
     }
     try{if(connection.script)await connection.command('Page.removeScriptToEvaluateOnNewDocument',{identifier:connection.script});}catch{}
-    try{if(this.owner||owned)await connection.command('Runtime.removeBinding',{name:this.binding});}catch{}
+    try{if(disposeUi&&(this.owner||owned))await connection.command('Runtime.removeBinding',{name:this.binding});}catch{}
     connection.close();
   }
   async detachAll() {

@@ -173,7 +173,14 @@ test('font sync, scope switching and quota window reference render end-to-end in
     };
   };
   let staleError = null;
-  const metricsPayload = (overrideScope = null) => ({
+  let transientOffline = false;
+  const metricsPayload = (overrideScope = null) => (transientOffline ? {
+    connection: 'offline',
+    error: '等待 Antigrative Dashboard 重新连接',
+    speed: null,
+    groups: [],
+    transient: true,
+  } : {
     connection: staleError ? 'stale' : 'live',
     ...(staleError ? { error: staleError } : {}),
     theme: panelTheme,
@@ -693,6 +700,36 @@ test('font sync, scope switching and quota window reference render end-to-end in
   await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('quota-error').textContent === '读取 Antigravity 进程信息超时'`, 'discovery timeout message rendered in #quota-error');
   staleError = null;
   await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('quota-error').hidden`, 'quota-error hides once recovered');
+
+  // Transient bridge timeout/offline response must keep the widget visible and preserve live metrics as stale
+  transientOffline = true;
+  await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('dot').classList.contains('stale')`, 'transient offline switches dot to stale');
+  const duringTransient = await evalJs(`() => {
+    const bar = document.getElementById('ag-pulse-status-bar');
+    const sr = bar.shadowRoot;
+    return {
+      visibility: getComputedStyle(bar).visibility,
+      inlineVisibility: bar.style.visibility,
+      layout: bar.dataset.layout,
+      density: bar.dataset.density,
+      tps: sr.getElementById('tps').textContent,
+      cacheTotal: sr.getElementById('cache-total').textContent,
+      contextPct: sr.getElementById('context-percent').textContent,
+      quotaErrorHidden: sr.getElementById('quota-error').hidden,
+      quotaErrorText: sr.getElementById('quota-error').textContent,
+    };
+  }`);
+  assert.equal(duringTransient.visibility, 'visible', 'transient timeout must never hide the status bar');
+  assert.equal(duringTransient.inlineVisibility, '');
+  assert.equal(duringTransient.layout, 'ready');
+  assert.equal(duringTransient.density, 'full', 'transient timeout must not collapse hydrated bar to icons-only');
+  assert.notEqual(duringTransient.tps, '—');
+  assert.notEqual(duringTransient.cacheTotal, '— tok');
+  assert.notEqual(duringTransient.contextPct, '—');
+  assert.equal(duringTransient.quotaErrorHidden, true, 'transient reconnect must not display reconnecting warning in quota card');
+  assert.equal(duringTransient.quotaErrorText, '');
+  transientOffline = false;
+  await waitUntil(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('dot').classList.contains('live')`, 'dot recovers to live after transient offline');
 
   // 2. Navigate to Sidecar Panel and verify Fira Code font sync + compact quota height + toks cache card
   signedIn = true;

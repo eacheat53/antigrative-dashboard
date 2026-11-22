@@ -172,3 +172,37 @@ test('maxWaitMs returns promptly during slow cold index build while background s
   assert.equal(warm.summaryStale,undefined);
   assert.equal(warm.totalTokens,1500);
 });
+
+test('summary avoids main-thread SQLite contention while diskSummaryPending is active and offloads cold bulk builds',async t=>{
+  const ledger=await fixture(t);
+  const now=Date.now();
+  await ledger.ingest(account,id,raw({start:new Date(now-60000).toISOString(),model:'Gemini 4 Neon (High)',usage:{responseId:'busy-1',inputTokens:'200',cacheReadTokens:'800',cacheWriteTokens:'0',outputTokens:'100'}}));
+  const baseline=await ledger.summary('all',now);
+  assert.equal(baseline.totalTokens,1100);
+
+  // While a worker summary is already active, main-thread summary returns stale fallback immediately without touching SQLite.
+  ledger.revision++;
+  let workerCalls=0;
+  ledger.diskSummaryPending=new Promise(()=>{});
+  try{
+    const duringWorker=await ledger.summary('all',now,{maxWaitMs:350});
+    assert.equal(duringWorker.summaryStale,true);
+    assert.equal(duringWorker.totalTokens,1100);
+    assert.equal(ledger.jsonSummaryPending.size,0);
+  }finally{
+    ledger.diskSummaryPending=null;
+  }
+
+  // Cold bulk build (>16 JSON files with no existing index) during foreground poll (maxWaitMs > 0) offloads to worker.
+  const bulkLedger=await fixture(t);
+  for(let i=1;i<=18;i++){
+    const cid=`${String(i).padStart(8,'0')}-1111-4111-8111-111111111111`;
+    await bulkLedger.ingest(account,cid,raw({start:new Date(now-60000).toISOString(),model:'Gemini 4 Neon (High)',usage:{responseId:`bulk-${i}`,inputTokens:'10',cacheReadTokens:'20',cacheWriteTokens:'0',outputTokens:'5'}}));
+  }
+  bulkLedger.caches.clear();
+  bulkLedger.startDiskSummary=()=>{workerCalls++;};
+  const offloaded=await bulkLedger.summary('all',now,{maxWaitMs:350});
+  assert.equal(workerCalls,1,'Cold bulk foreground poll must offload to disk worker instead of blocking main thread');
+  assert.equal(offloaded.summaryStale,true);
+  assert.equal(bulkLedger.jsonSummaryPending.size,0);
+});

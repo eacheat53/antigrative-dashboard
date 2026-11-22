@@ -192,7 +192,10 @@ test('MetricsStore LRU cap, TrajectoryReader cache cap, and DesktopUsage memory 
   assert.equal(store.sessions.has(cid(4)),true);
   assert.equal(store.sessions.has(cid(5)),false);
 
-  // 2. TrajectoryReader cache cap bounds inactive entries without rejecting single active conversation <= budgetBytes.
+  // 2. TrajectoryReader cache cap bounds inactive entries, defaults to full budgetBytes,
+  // and evicts settled entries before actively running conversations.
+  const defaultReader=new TrajectoryReader({now:()=>1000});
+  assert.equal(defaultReader.cacheBudgetBytes,defaultReader.budgetBytes);
   const reader=new TrajectoryReader({now:()=>1000},{budgetBytes:1024*1024,cacheBudgetBytes:2000,maxCachedEntries:2});
   reader.entries.set('a',{data:{},bytes:1200,pending:null});reader.cachedBytes+=1200;
   reader.entries.set('b',{data:{},bytes:1200,pending:null});reader.cachedBytes+=1200;
@@ -201,6 +204,15 @@ test('MetricsStore LRU cap, TrajectoryReader cache cap, and DesktopUsage memory 
   assert.equal(reader.entries.has('c'),true);
   assert.equal(reader.entries.size,1);
   assert.equal(reader.cachedBytes,1500);
+
+  const runningReader=new TrajectoryReader({now:()=>1000},{budgetBytes:1024*1024,cacheBudgetBytes:2500,maxCachedEntries:2});
+  runningReader.entries.set('active',{data:{},bytes:1800,pending:null,summary:{status:'CASCADE_RUN_STATUS_RUNNING'}});runningReader.cachedBytes+=1800;
+  runningReader.entries.set('settled',{data:{},bytes:1000,pending:null,summary:{status:'CASCADE_RUN_STATUS_IDLE'}});runningReader.cachedBytes+=1000;
+  runningReader.entries.set('child',{data:{},bytes:600,pending:null,summary:{status:'CASCADE_RUN_STATUS_IDLE'}});runningReader.cachedBytes+=600;
+  runningReader.trim('child');
+  assert.equal(runningReader.entries.has('active'),true,'Settled entries must be evicted before an actively running conversation');
+  assert.equal(runningReader.entries.has('settled'),false);
+  assert.equal(runningReader.entries.has('child'),true);
 
   // 3. DesktopUsage memorySoftLimitBytes pauses full-sync slice and trims caches.
   const dir=await mkdtemp(join(tmpdir(),'ag-usage-mem-'));

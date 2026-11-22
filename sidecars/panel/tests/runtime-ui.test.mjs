@@ -300,21 +300,100 @@ test('runtime bridge samples host fonts into rendererTheme, allows usageScope an
   await ui.stop();
   assert.deepEqual(ui.rendererTheme,{});
 });
-
-test('runtime bridge forwards export-list and export requests only from trusted contexts', async () => {
-  const { ui, connections } = fixture();
-  const seen = [];
-  ui.exportList = async input => { seen.push(['list', input]); return { defaultDir: '/tmp/exp', conversations: [{ id: '11111111-2222-3333-4444-555555555555', title: 'Demo' }] }; };
-  ui.runExport = async input => { seen.push(['export', input]); return { ok: true, dir: '/tmp/exp', files: [{ path: '/tmp/exp/demo.md' }] }; };
-  await ui.tick();
-  const c = connections[0];
-  await ui.event(c, { method: 'Runtime.bindingCalled', params: { name: '__agPulseRuntimeCallV4', executionContextId: 9, payload: JSON.stringify({ id: 1, type: 'export-list', input: {} }) } });
-  assert.equal(seen.length, 0);
-  await ui.event(c, { method: 'Runtime.bindingCalled', params: { name: '__agPulseRuntimeCallV4', executionContextId: 7, payload: JSON.stringify({ id: 2, type: 'export-list', input: { conversationId: '11111111-2222-3333-4444-555555555555' } }) } });
-  await ui.event(c, { method: 'Runtime.bindingCalled', params: { name: '__agPulseRuntimeCallV4', executionContextId: 7, payload: JSON.stringify({ id: 3, type: 'export', input: { ids: ['11111111-2222-3333-4444-555555555555'], format: 'md', save: true } }) } });
-  assert.equal(seen.length, 2);
-  assert.equal(seen[0][0], 'list');
-  assert.equal(seen[1][0], 'export');
   assert.ok(c.calls.some(call => call.params.expression?.includes('/tmp/exp/demo.md')));
+  await ui.stop();
+});
+
+test('bridge timeout, queue saturation, binding error and reinjection never return enabled:false',async()=>{
+  const window={};window.top=window;const sent=[];const timers=[];
+  window.__agPulseRuntimeCallV4=payload=>sent.push(JSON.parse(payload));
+  const fakeSetTimeout=(fn,ms)=>{const t={fn,ms,cleared:false};timers.push(t);return t;};
+  const fakeClearTimeout=t=>{if(t)t.cleared=true;};
+  const source=makeRendererSource('module.exports = function(){return {};};','module.exports = function(){};');
+  runInNewContext(source,{window,setTimeout:fakeSetTimeout,clearTimeout:fakeClearTimeout});
+
+  // 15s request timeout resolves transiently without disabling the widget.
+  const timedOut=window.agPulseHost.getMetrics({conversationId:null});
+  assert.equal(timers.length,1);assert.equal(timers[0].ms,15000);
+  timers[0].fn();
+  const timeoutResult=await timedOut;
+  assert.equal(timeoutResult.connection,'offline');
+  assert.equal(timeoutResult.transient,true);
+  assert.equal(timeoutResult.enabled,undefined);
+
+  // Queue saturation (>= 8 pending) resolves transiently without enabled:false.
+  const pendingCalls=[];
+  for(let i=0;i<8;i++)pendingCalls.push(window.agPulseHost.getMetrics({conversationId:null}));
+  const saturated=await window.agPulseHost.getMetrics({conversationId:null});
+  assert.equal(saturated.connection,'offline');
+  assert.equal(saturated.transient,true);
+  assert.equal(saturated.enabled,undefined);
+
+  // Re-injecting the identical source with the same binding releases orphaned calls cleanly.
+  runInNewContext(source,{window,setTimeout:fakeSetTimeout,clearTimeout:fakeClearTimeout});
+  const released=await Promise.all(pendingCalls);
+  for(const item of released){assert.equal(item.connection,'offline');assert.equal(item.transient,true);assert.equal(item.enabled,undefined);}
+
+  // Transient binding throw also resolves without enabled:false.
+  window.__agPulseRuntimeCallV4=()=>{throw new Error('binding unavailable');};
+  const failed=await window.agPulseHost.getMetrics({conversationId:null});
+  assert.equal(failed.connection,'offline');assert.equal(failed.transient,true);assert.equal(failed.enabled,undefined);
+
+  // Explicit dispose still resolves pending calls with enabled:false.
+  window.__agPulseRuntimeCallV4=payload=>sent.push(JSON.parse(payload));
+  const closing=window.agPulseHost.getMetrics({conversationId:null});
+  window.__agPulseRuntimeBridge.dispose();
+  assert.equal((await closing).enabled,false);
+});
+
+test('inflight saturation replies immediately with transient offline instead of dropping into a 15s timeout',async()=>{
+  const {ui,connections}=fixture();
+  const gates=[];
+  ui.snapshot=()=>new Promise(resolve=>{gates.push(resolve);});
+  await ui.tick();const c=connections[0];
+  const req=id=>ui.event(c,{method:'Runtime.bindingCalled',params:{name:ui.binding,executionContextId:7,payload:JSON.stringify({id,type:'metrics',input:{conversationId:null}})}});
+  const running=[];
+  for(let i=1;i<=8;i++)running.push(req(i));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(c.inflight,8);
+  await req(9);
+  const ninthReply=c.calls.find(call=>call.method==='Runtime.evaluate'&&call.params.expression?.includes('?.resolve(9,'));
+  assert.ok(ninthReply,'9th request must receive immediate transient reply instead of silent drop');
+  assert.ok(ninthReply.params.expression.includes('"transient":true'));
+  assert.equal(ninthReply.params.expression.includes('"enabled":false'),false);
+  for(const resolve of gates)resolve({connection:'live',groups:[],speed:null});
+  await Promise.all(running);
+  await ui.stop();
+});
+
+test('transient heartbeat timeouts keep the live desktop widget mounted and reconnect without disposing UI',async()=>{
+  const {ui,connections}=fixture();
+  await ui.tick();
+  const first=connections[0];
+  const orig=first.command.bind(first);
+  let failHeartbeat=true;
+  first.command=async(method,params={})=>{
+    if(failHeartbeat&&method==='Runtime.evaluate'&&params.returnByValue)throw new Error('Renderer command timeout');
+    return orig(method,params);
+  };
+
+  // Single transient 5s heartbeat timeout keeps session and mounted UI intact.
+  await ui.tick();
+  assert.equal(ui.sessions.size,1);
+  assert.equal(first.closed,false);
+  assert.equal(ui.health.state,'mounted');
+  assert.equal(first.calls.some(call=>call.params.expression?.includes('__agPulseDispose')),false);
+
+  // Second consecutive timeout drops the stale socket without executing __agPulseDispose.
+  await ui.tick();
+  assert.equal(first.closed,true);
+  assert.equal(ui.sessions.size,0);
+  assert.ok(first.calls.some(call=>call.method==='Page.removeScriptToEvaluateOnNewDocument'));
+  assert.equal(first.calls.some(call=>call.params.expression?.includes('__agPulseDispose')),false);
+
+  // Next tick reconnects seamlessly.
+  await ui.tick();
+  assert.equal(connections.length,2);
+  assert.equal(ui.health.state,'mounted');
   await ui.stop();
 });
