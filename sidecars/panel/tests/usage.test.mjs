@@ -149,9 +149,10 @@ test('maxWaitMs returns promptly during slow cold index build while background s
   ledger.caches.clear();
 
   let releaseRead;
+  const readGate=new Promise(resolve=>{releaseRead=resolve;});
   const origRead=ledger.readSummaryRecord.bind(ledger);
   ledger.readSummaryRecord=async file=>{
-    await new Promise(resolve=>{releaseRead=resolve;});
+    await readGate;
     return origRead(file);
   };
 
