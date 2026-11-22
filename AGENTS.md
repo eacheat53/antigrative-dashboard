@@ -24,5 +24,5 @@ This repository is an **independent fork** of `ATtacK030130/antigrative-dashboar
 ## 4. Local Install & Verification
 
 - Deploy locally with `uv run python manage.py install` (restarting Antigravity Desktop to reload UI assets).
-- Note that `compat/update-worker.py` currently still targets `ATtacK030130/antigrative-dashboard`; avoid clicking `Check for updates` inside the app unless `REPO` in `compat/update-worker.py` (and `tests/test_update_worker.py`) is switched to `eacheat53/antigrative-dashboard`.
+- `compat/update-worker.py` (and `tests/test_update_worker.py`) target `eacheat53/antigrative-dashboard` for in-app `Check for updates`.
 - Run `node --test --test-timeout=60000 sidecars/panel/tests/*.test.mjs`, `node --test ide/tests/*.test.mjs cli/tests/*.test.mjs`, and `uv run python -m unittest discover -s tests -v` before pushing or releasing.
