@@ -538,7 +538,7 @@ module.exports = function installAgPulseInlineWidget() {
     attribute(node,'lang',language.language);
     for(const e of root.querySelectorAll('[data-i18n]')){const value=t(e.dataset.i18n);if(e.textContent!==value)e.textContent=value;}
     for(const e of root.querySelectorAll('[data-i18n-aria]'))attribute(e,'aria-label',t(e.dataset.i18nAria));
-    for(const e of root.querySelectorAll('[data-i18n-aria][title]'))attribute(e,'title',t(e.dataset.i18nAria));
+    for(const e of root.querySelectorAll('[data-i18n-aria][title]:not([data-card])'))attribute(e,'title',t(e.dataset.i18nAria));
     for(const e of root.querySelectorAll('[data-i18n-title]'))attribute(e,'title',t(e.dataset.i18nTitle));
     for(const e of root.querySelectorAll('[data-i18n-placeholder]'))attribute(e,'placeholder',t(e.dataset.i18nPlaceholder));
     for(const button of root.querySelectorAll('[data-language-choice]')){attribute(button,'aria-pressed',button.dataset.languageChoice===language.language);attribute(button,'data-save-failed',preferences.error);attribute(button,'title',preferences.error?t('languageSaveFailed'):(button.getAttribute('aria-label')||button.textContent));}
