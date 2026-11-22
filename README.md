@@ -16,7 +16,7 @@ Keep the summary visible. Hover for the details.
 
 </div>
 
-**v0.9.8:** Makes the **Neon (氖龙) plush mascot Easter egg** opt-in (**off by default**, zero mascot DOM until enabled) with a durable **`✦ Neon`** toggle in the Context card footer next to the language switcher, while retaining all v0.9.6 macOS launcher and v0.9.5 memory/backfill improvements. [Release notes](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.8) · [Compatibility](COMPATIBILITY.md).
+**v0.9.8:** Completely removes the Neon (氖龙) mascot Easter egg and toggle so standard downloads and in-app updates stay clean and lightweight, while retaining all v0.9.6 macOS launcher ergonomics and v0.9.5 memory/backfill improvements (users who want the Neon Easter Egg can use [v0.9.7](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.7)). [Release notes](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.8) · [Compatibility](COMPATIBILITY.md).
 
 ## Preview
 

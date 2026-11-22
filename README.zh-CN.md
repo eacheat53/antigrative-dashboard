@@ -16,7 +16,7 @@
 
 </div>
 
-**v0.9.8：** 将 **Neon（氖龙）毛绒玩偶彩蛋** 改为**默认关闭**（默认下载与应用内更新均纯净无玩偶、零 DOM 开销），在上下文详情卡底部语言切换旁新增持久化 **`✦ 氖龙`** 开关供随时开启，并保留 v0.9.6 macOS 启动器与 v0.9.5 内存/历史补录优化。[发布说明](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.8) · [兼容性](COMPATIBILITY.md)。
+**v0.9.8：** 彻底移除 Neon（氖龙）彩蛋代码、内嵌资源与开关，让默认下载与应用内更新恢复纯净轻量，并保留 v0.9.6 macOS 启动器与 v0.9.5 内存/历史补录优化（需要氖龙彩蛋的用户可使用专属 [v0.9.7 彩蛋版](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.7)）。[发布说明](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.8) · [兼容性](COMPATIBILITY.md)。
 
 ## 看看效果
 

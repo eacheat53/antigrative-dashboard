@@ -2,8 +2,7 @@
 
 ## 0.9.8 — 2026-11-19
 
-- Make the **Neon (氖龙) mascot Easter egg opt-in (`off` by default)** across all desktop App and standalone IDE installations: new downloads and in-app updates stay completely clean with zero mascot DOM mounted unless explicitly enabled.
-- Add a compact **`✦ Neon` / `✦ 氖龙` / `✦ 氖龍` toggle** inside the Context card footer (next to the language switcher) backed by durable `neonMascot` (`off` / `on`) preferences in `preferences.json` and `localStorage` caching, syncing immediately across all composer instances and persisting across restarts.
+- Completely remove the Neon (氖龙) plush mascot Easter egg code, embedded WebP assets, and toggles from the standard release (`antigrative-dashboard-0.9.8.zip` and `antigrative-dashboard-ide-0.9.8.vsix`), keeping default downloads and in-app updates clean and lightweight while preserving all v0.9.6 macOS launcher ergonomics and v0.9.5 memory/backfill optimizations. Users who want the Neon Easter Egg can continue using the dedicated `v0.9.7` release.
 
 ## 0.9.7 — 2026-11-19
 

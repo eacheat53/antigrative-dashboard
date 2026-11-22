@@ -14,12 +14,20 @@ module.exports = function createDashboardI18n(initialLanguage) {
       taskOwn:'Current agent',taskSubagents:'Subagents ({n})',taskLoading:'Summing subagents…',taskPartial:'Some subagents unavailable',taskCurrentOnly:'Current agent only; subagent statistics unavailable.',
       transcriptTitle:'Recorded text estimate',transcriptUser:'User text',transcriptAssistant:'Replies + thinking',transcriptTool:'Tool output',transcriptSystem:'System text',transcriptMarkers:'Compaction markers',transcriptImages:'Image-generation steps',transcriptPartial:'partial',transcriptLoading:'Loading…',transcriptUnavailable:'Unavailable',transcriptSaved:'saved',transcriptBasis:'Estimated logged text, not active context or billed usage. Hidden prompts, media and tool-call arguments are excluded.',
       contextHostLimit:'Active window (host)',contextProviderCapacity:'Provider capacity reference',contextCompressionLimit:'Compaction threshold',contextLimitUnknown:'Unknown',contextReferenceBasis:'Provider specification; not this session\'s available capacity.',
-      context:'Context window',contextShort:'Ctx',contextUsed:'{used}% used',contextTokens:'{used} / {max} toks',contextUnknown:'Context capacity unavailable',contextUnavailable:'Context statistics are unavailable for this request.',contextBasis:'Host estimate at the latest request start; not cumulative tokens or a live streaming counter.',contextModel:'Sampled model',contextLimit:'Window capacity',contextUsage:'Used tokens (estimate)',contextSaved:'Showing saved context statistics ({time}).',contextExceeded:'The host estimate exceeds the reported capacity.',
+      contextUsageTitle:'Context Usage',usageBreakdown:'Usage breakdown',freeSpace:'Free space',
+      contextLimitAuto:'Auto',contextCustomLimit:'Custom window limit',contextCustomPlaceholder:'e.g. 600k or 600000',contextCustomApply:'Apply',contextCustomInvalid:'Enter 65536–2097152 (e.g. 512k, 600k, 1m).',
+      contextNonNativeAlert:'⚡ Host patched to {limit} (official native is {native}). Click badge to cycle.',
+      contextPreviewAlert:'Previewing {limit} denominator in UI (host reports {host}; backend still compacts at host limit).',
+      contextLimitTooltipNative:'Official native window ({limit}). Click to cycle preview: 512K / 734K.',
+      contextLimitTooltipAutoNonNative:'Patched host capacity detected ({limit}). Click to cycle preview.',
+      contextLimitTooltipOverride:'UI preview denominator: {limit} (host reports {host}). Click to cycle.',
+      contextCompactions:'Compactions',contextCompactionCount:'{n}×',contextCompactionsTitle:'Context compactions recorded in this conversation: {n}',
+      context:'Context window',contextShort:'Ctx',contextUsed:'{used}% used ({remaining}% left)',contextTokens:'{used} / {max} toks',contextUnknown:'Context capacity unavailable',contextUnavailable:'Context statistics are unavailable for this request.',contextBasis:'Host estimate at the latest request start; not cumulative tokens or a live streaming counter.',contextModel:'Sampled model',contextLimit:'Window capacity',contextUsage:'Used tokens (estimate)',contextSaved:'Showing saved context statistics ({time}).',contextExceeded:'The host estimate exceeds the reported capacity.',
       savedStats:'Showing saved conversation statistics ({time}).',saveFailed:'Statistics could not be saved locally.',
       strip:'Antigrative Dashboard statistics',session:'Session statistics',cache:'Cache hit',cacheTitle:'Token usage',five:'Five-hour quota',week:'Weekly quota',weekShort:'Wk',
       modelTime:'Model time',toolTime:'Tool time',ttft:'Average TTFT',ttftShort:'TTFT',latestSpeed:'Latest speed',sessionAvg:'Session avg',peakSpeed:'Peak',basisShortResponse:'Response',basisShortAll:'Output',sessionTps:'Session TPS',latest:'Last request',tokens:'Response / thinking',remaining:'remaining',
       resetIn:'Resets in',resetTime:'Reset time (UTC+8)',group:'Quota group',selectGroup:'Select quota group',refresh:'Refresh quota',refreshStats:'Refresh statistics',refreshing:'Refreshing…',
-      speedStyle:'Speed card style',styleMinimal:'Minimal',styleCat:'Pixel cat',styleSaveFailed:'Style could not be saved. Try again.',neonMascot:'Neon',neonMascotOn:'Neon mascot: On (click to turn off)',neonMascotOff:'Neon mascot: Off (click to enable Easter egg)',neonSaveFailed:'Neon mascot preference could not be saved. Try again.',outlookOk:'Comfortable',outlookTight:'Tight',outlookExhaust:'Runs out early',paceIdle:'Unused',forecastLeft:'~{pct} left at reset',forecastDepletes:'Runs out in ~{eta}, {early} before reset',forecastWarming:'Used {pct} · warming up',forecastBasis:'{remaining} quota left · {time} of the window left · linear projection from this window\'s average usage',
+      speedStyle:'Speed card style',styleMinimal:'Minimal',styleCat:'Pixel cat',styleSaveFailed:'Style could not be saved. Try again.',outlookOk:'Comfortable',outlookTight:'Tight',outlookExhaust:'Runs out early',paceIdle:'Unused',forecastLeft:'~{pct} left at reset',forecastDepletes:'Runs out in ~{eta}, {early} before reset',forecastWarming:'Used {pct} · warming up',forecastBasis:'{remaining} quota left · {time} of the window left · linear projection from this window\'s average usage',
       waiting:'Waiting for refresh',connecting:'Connecting to Antigravity…',waitingApp:'Waiting for Antigravity',waitingModel:'Waiting for a model request',waitingRequest:'No requests yet',
       hover:'Hover over the strip for details',autoConnect:'Open the app to connect automatically',loadingQuota:'Loading quota…',unavailableQuota:'Quota unavailable',
       live:'Connected to Antigrative Dashboard',stale:'Showing last available quota',offline:'Antigrative Dashboard is offline',
@@ -37,6 +45,7 @@ module.exports = function createDashboardI18n(initialLanguage) {
       panelInlineReconnecting:'Inline widget is reconnecting automatically; statistics remain available in this panel.',
       panelDebugPortReady:'Host started without remote debugging (launch shortcut configured); fully quit and reopen Antigravity for the inline bar. Statistics remain available here.',
       panelDebugPortManual:'Antigravity 2.33+ requires --remote-debugging-port=0 --remote-debugging-address=127.0.0.1 (or python3 manage.py launch) for the inline bar; statistics remain available here.',
+      exportTitle:'Export conversations',exportButton:'Export conversations',exportLoading:'Loading conversations…',exportEmpty:'No local transcripts found.',exportSelectAll:'All',exportSelectNone:'None',exportCurrent:'Current',exportThinking:'Thinking',exportTools:'Tools',exportSystem:'System',exportDirLabel:'Save folder',exportSave:'Export ({n})',exportSaving:'Exporting…',exportDone:'✓ Exported ({n})',exportCopy:'Copy',exportCopiedShort:'✓ Copied',exportCopied:'Copied: {title}',exportCopySingle:'Select 1 conversation to copy.',exportSaved:'Saved {n} file(s) to {dir}',exportSavedOne:'Saved: {file}',exportClose:'Close',exportFailed:'Export failed',
     },
     'zh-CN':{
       collectionBackgroundFailed:'后台暂时无法完成，稍后会自动重试。',collectionProcessing:'正在补全统计',collectionProcessingReason:'后台处理中，可继续使用。',collectionProgress:'查看进度',collectionProgressCounts:'已处理 {steps} 个步骤 · {requests} 条请求记录',collectionQueued:'等待处理',collectionSteps:'读取步骤',collectionGenerators:'读取请求记录',collectionReducing:'计算统计',collectionPublishing:'保存已校验统计',
@@ -51,12 +60,20 @@ module.exports = function createDashboardI18n(initialLanguage) {
       taskOwn:'当前代理',taskSubagents:'子代理（{n}）',taskLoading:'正在汇总子代理…',taskPartial:'部分子代理暂不可读取',taskCurrentOnly:'仅当前代理；子代理统计暂不可用',
       transcriptTitle:'已记录文本估算',transcriptUser:'用户文本',transcriptAssistant:'回复与思考',transcriptTool:'工具输出',transcriptSystem:'系统文本',transcriptMarkers:'压缩标记记录',transcriptImages:'图像生成步骤',transcriptPartial:'不完整',transcriptLoading:'读取中…',transcriptUnavailable:'不可用',transcriptSaved:'已保存',transcriptBasis:'日志文本估算，非当前上下文或计费用量。不含隐藏提示、媒体和工具调用参数。',
       contextHostLimit:'当前窗口容量（宿主）',contextProviderCapacity:'供应商容量参考',contextCompressionLimit:'压缩触发阈值',contextLimitUnknown:'未知',contextReferenceBasis:'供应商规格参考，不代表当前会话可用容量。',
-      context:'上下文窗口',contextShort:'上下文',contextUsed:'{used}% 已用',contextTokens:'{used} / {max} toks',contextUnknown:'上下文容量不可用',contextUnavailable:'此请求暂无可用上下文统计。',contextBasis:'宿主在最近请求开始时的估计值，非累计 Token，也非流式实时计数。',contextModel:'采样模型',contextLimit:'窗口容量',contextUsage:'已用 Token（估计）',contextSaved:'显示已保存的上下文统计（{time}）。',contextExceeded:'宿主估计值超过返回的窗口容量。',
+      contextUsageTitle:'上下文用量',usageBreakdown:'细分用量',freeSpace:'剩余空闲空间',
+      contextLimitAuto:'自动',contextCustomLimit:'自定义窗口上限',contextCustomPlaceholder:'如 600k 或 600000',contextCustomApply:'应用',contextCustomInvalid:'请输入 65536–2097152（如 512k、600k、1m）',
+      contextNonNativeAlert:'⚡ 后端已解锁至 {limit}（官方原生 {native}）。点击上方徽章可切换预览。',
+      contextPreviewAlert:'当前为前端预览分母 {limit}（后端实际报告 {host}，仍按后端阈值压缩）。',
+      contextLimitTooltipNative:'官方原生窗口（{limit}）。点击切换预览至 512K / 734K。',
+      contextLimitTooltipAutoNonNative:'检测到后端已补丁扩容至 {limit}。点击切换预览阈值。',
+      contextLimitTooltipOverride:'当前为前端预览分母 {limit}（后端实际报告 {host}）。点击切换。',
+      contextCompactions:'已压缩次数',contextCompactionCount:'{n} 次',contextCompactionsTitle:'当前会话已记录的上下文压缩次数：{n} 次',
+      context:'上下文窗口',contextShort:'上下文',contextUsed:'{used}% 已用（剩余 {remaining}%）',contextTokens:'{used} / {max} toks',contextUnknown:'上下文容量不可用',contextUnavailable:'此请求暂无可用上下文统计。',contextBasis:'宿主在最近请求开始时的估计值，非累计 Token，也非流式实时计数。',contextModel:'采样模型',contextLimit:'窗口容量',contextUsage:'已用 Token（估计）',contextSaved:'显示已保存的上下文统计（{time}）。',contextExceeded:'宿主估计值超过返回的窗口容量。',
       savedStats:'显示已保存的会话统计（{time}）。',saveFailed:'统计暂时无法保存到本地。',
       strip:'Antigrative Dashboard 会话与额度状态条',session:'会话统计',cache:'缓存命中',cacheTitle:'Token 用量',five:'5h 额度',week:'周额度',weekShort:'周',
       modelTime:'模型调用用时',toolTime:'工具调用用时',ttft:'首 token 平均（TTFT）',ttftShort:'首字耗时',latestSpeed:'最新速度',sessionAvg:'会话平均',peakSpeed:'峰值',basisShortResponse:'正文输出',basisShortAll:'总输出',sessionTps:'会话输出速率（TPS）',latest:'最近一次请求',tokens:'正文 / 思考输出',remaining:'剩余',
       resetIn:'重置倒计时',resetTime:'重置时间（北京时间）',group:'额度组',selectGroup:'选择额度组',refresh:'刷新额度',refreshStats:'刷新统计',refreshing:'正在刷新…',
-      speedStyle:'速度卡样式',styleMinimal:'简约',styleCat:'像素猫',styleSaveFailed:'样式设置暂时无法保存，请重试。',neonMascot:'氖龙',neonMascotOn:'氖龙彩蛋：已开启（点击关闭）',neonMascotOff:'氖龙彩蛋：已关闭（点击开启）',neonSaveFailed:'氖龙彩蛋设置暂时无法保存，请重试。',outlookOk:'额度充裕',outlookTight:'额度偏紧',outlookExhaust:'重置前耗尽',paceIdle:'暂未消耗',forecastLeft:'预计重置时剩 ~{pct}',forecastDepletes:'约 {eta} 后耗尽，比重置早 {early}',forecastWarming:'已耗 {pct} · 采样预热中',forecastBasis:'剩余额度 {remaining} · 剩余时间 {time} · 按本窗口平均消耗线性推算',
+      speedStyle:'速度卡样式',styleMinimal:'简约',styleCat:'像素猫',styleSaveFailed:'样式设置暂时无法保存，请重试。',outlookOk:'额度充裕',outlookTight:'额度偏紧',outlookExhaust:'重置前耗尽',paceIdle:'暂未消耗',forecastLeft:'预计重置时剩 ~{pct}',forecastDepletes:'约 {eta} 后耗尽，比重置早 {early}',forecastWarming:'已耗 {pct} · 采样预热中',forecastBasis:'剩余额度 {remaining} · 剩余时间 {time} · 按本窗口平均消耗线性推算',
       waiting:'等待刷新',connecting:'连接 Antigravity…',waitingApp:'等待 Antigravity',waitingModel:'等待模型生成',waitingRequest:'尚无请求',hover:'悬停状态条，查看详细统计',autoConnect:'打开应用后自动连接',loadingQuota:'读取额度…',unavailableQuota:'额度暂不可用',
       live:'已连接 Antigrative Dashboard',stale:'显示上次成功读取的额度',offline:'Antigrative Dashboard 暂未连接',
       responseBasis:'统计方式：正文 Token ÷ 流式时长；会话 TPS 按总时长加权。',allBasis:'统计方式：输出 Token ÷ 流式时长；此模型未拆分正文与思考。',
@@ -71,6 +88,7 @@ module.exports = function createDashboardI18n(initialLanguage) {
       panelInlineReconnecting:'内嵌栏正在自动重连；此面板仍可查看统计。',
       panelDebugPortReady:'宿主未开启调试端口（已自动配置启动入口）；请完全退出并从快捷方式重开 Antigravity 以恢复内嵌栏，当前可在此面板查看统计。',
       panelDebugPortManual:'Antigravity 2.33+ 需带 --remote-debugging-port=0 --remote-debugging-address=127.0.0.1（或运行 python3 manage.py launch）启动以显示内嵌栏；此面板仍可查看统计。',
+      exportTitle:'导出对话',exportButton:'导出对话上下文',exportLoading:'正在读取本地对话…',exportEmpty:'未找到可导出的本地对话日志。',exportSelectAll:'全选',exportSelectNone:'清空',exportCurrent:'当前',exportThinking:'思考',exportTools:'工具',exportSystem:'系统',exportDirLabel:'保存目录',exportSave:'导出 ({n})',exportSaving:'导出中…',exportDone:'✓ 已导出 ({n})',exportCopy:'复制',exportCopiedShort:'✓ 已复制',exportCopied:'已复制：{title}',exportCopySingle:'复制仅支持勾选 1 个会话。',exportSaved:'已导出 {n} 个文件到 {dir}',exportSavedOne:'已保存：{file}',exportClose:'关闭',exportFailed:'导出失败',
     },
     'zh-TW':{
       collectionBackgroundFailed:'背景暫時無法完成，稍後會自動重試。',collectionProcessing:'正在補全統計',collectionProcessingReason:'背景處理中，可繼續使用。',collectionProgress:'查看進度',collectionProgressCounts:'已處理 {steps} 個步驟 · {requests} 筆請求記錄',collectionQueued:'等待處理',collectionSteps:'讀取步驟',collectionGenerators:'讀取請求記錄',collectionReducing:'計算統計',collectionPublishing:'儲存已驗證統計',
@@ -85,12 +103,20 @@ module.exports = function createDashboardI18n(initialLanguage) {
       taskOwn:'目前代理',taskSubagents:'子代理（{n}）',taskLoading:'正在彙總子代理…',taskPartial:'部分子代理暫時無法讀取',taskCurrentOnly:'僅目前代理；子代理統計暫時無法取得',
       transcriptTitle:'已記錄文字預估',transcriptUser:'使用者文字',transcriptAssistant:'回覆與思考過程',transcriptTool:'工具輸出',transcriptSystem:'系統文字',transcriptMarkers:'壓縮標記記錄',transcriptImages:'圖片生成步驟',transcriptPartial:'部分記錄',transcriptLoading:'載入中…',transcriptUnavailable:'無法提供',transcriptSaved:'已儲存',transcriptBasis:'依記錄文字推算之預估值，非作用中上下文或計費用量。不含隱藏提示詞、媒體檔案與工具呼叫引數。',
       contextHostLimit:'目前視窗容量（宿主環境）',contextProviderCapacity:'供應商規格容量參考',contextCompressionLimit:'觸發壓縮門檻',contextLimitUnknown:'未知',contextReferenceBasis:'模型供應商規格參考值，不代表目前對話的可用容量。',
-      context:'上下文視窗',contextShort:'上下文',contextUsed:'{used}% 已使用',contextTokens:'{used} / {max} toks',contextUnknown:'目前無法取得上下文容量',contextUnavailable:'此請求目前無法取得上下文統計資料。',contextBasis:'宿主環境於最近一次請求發起時的預估值，非累計 Token，亦非串流即時計數。',contextModel:'取樣模型',contextLimit:'視窗容量',contextUsage:'已用 Token（預估）',contextSaved:'顯示已儲存的上下文統計資料（{time}）。',contextExceeded:'宿主預估值已超過回傳的視窗容量。',
+      contextUsageTitle:'上下文用量',usageBreakdown:'細分用量',freeSpace:'剩餘可用空間',
+      contextLimitAuto:'自動',contextCustomLimit:'自訂視窗上限',contextCustomPlaceholder:'例如 600k 或 600000',contextCustomApply:'套用',contextCustomInvalid:'請輸入 65536–2097152（如 512k、600k、1m）',
+      contextNonNativeAlert:'⚡ 後端已解鎖至 {limit}（官方原生 {native}）。點擊上方徽章可切換預覽。',
+      contextPreviewAlert:'目前為前端預覽分母 {limit}（後端實際回報 {host}，仍按後端閾值壓縮）。',
+      contextLimitTooltipNative:'官方原生視窗（{limit}）。點擊切換預覽至 512K / 734K。',
+      contextLimitTooltipAutoNonNative:'偵測到後端已補丁擴容至 {limit}。點擊切換預覽閾值。',
+      contextLimitTooltipOverride:'目前為前端預覽分母 {limit}（後端實際回報 {host}）。點擊切換。',
+      contextCompactions:'已壓縮次數',contextCompactionCount:'{n} 次',contextCompactionsTitle:'目前對話已記錄的上下文壓縮次數：{n} 次',
+      context:'上下文視窗',contextShort:'上下文',contextUsed:'{used}% 已使用（剩餘 {remaining}%）',contextTokens:'{used} / {max} toks',contextUnknown:'目前無法取得上下文容量',contextUnavailable:'此請求目前無法取得上下文統計資料。',contextBasis:'宿主環境於最近一次請求發起時的預估值，非累計 Token，亦非串流即時計數。',contextModel:'取樣模型',contextLimit:'視窗容量',contextUsage:'已用 Token（預估）',contextSaved:'顯示已儲存的上下文統計資料（{time}）。',contextExceeded:'宿主預估值已超過回傳的視窗容量。',
       savedStats:'顯示已儲存的對話統計資料（{time}）。',saveFailed:'統計資料暫時無法儲存至本機。',
       strip:'Antigrative Dashboard 對話與配額狀態列',session:'工作階段統計',cache:'快取命中',cacheTitle:'Token 用量',five:'5 小時配額',week:'每週配額',weekShort:'週',
       modelTime:'模型呼叫耗時',toolTime:'工具呼叫耗時',ttft:'首字回應平均時間 (TTFT)',ttftShort:'首字耗時',latestSpeed:'最新速率',sessionAvg:'階段平均',peakSpeed:'峰值',basisShortResponse:'回覆輸出',basisShortAll:'總輸出',sessionTps:'連線階段輸出速率 (TPS)',latest:'最近一次請求',tokens:'回覆內文 / 思考輸出',remaining:'剩餘',
       resetIn:'重設倒數',resetTime:'重設時間 (UTC+8)',group:'配額群組',selectGroup:'選取配額群組',refresh:'重新整理配額',refreshStats:'重新整理統計',refreshing:'正在重新整理…',
-      speedStyle:'速度卡樣式',styleMinimal:'簡約',styleCat:'像素貓',styleSaveFailed:'樣式設定暫時無法儲存，請重試。',neonMascot:'氖龍',neonMascotOn:'氖龍彩蛋：已開啟（點擊關閉）',neonMascotOff:'氖龍彩蛋：已關閉（點擊開啟）',neonSaveFailed:'氖龍彩蛋設定暫時無法儲存，請重試。',outlookOk:'配額充裕',outlookTight:'配額偏緊',outlookExhaust:'重設前耗盡',paceIdle:'暫未消耗',forecastLeft:'預計重設時剩 ~{pct}',forecastDepletes:'約 {eta} 後耗盡，比重設早 {early}',forecastWarming:'已耗 {pct} · 取樣預熱中',forecastBasis:'剩餘配額 {remaining} · 剩餘時間 {time} · 依本週期平均消耗線性推算',
+      speedStyle:'速度卡樣式',styleMinimal:'簡約',styleCat:'像素貓',styleSaveFailed:'樣式設定暫時無法儲存，請重試。',outlookOk:'配額充裕',outlookTight:'配額偏緊',outlookExhaust:'重設前耗盡',paceIdle:'暫未消耗',forecastLeft:'預計重設時剩 ~{pct}',forecastDepletes:'約 {eta} 後耗盡，比重設早 {early}',forecastWarming:'已耗 {pct} · 取樣預熱中',forecastBasis:'剩餘配額 {remaining} · 剩餘時間 {time} · 依本週期平均消耗線性推算',
       waiting:'等待重新整理',connecting:'連線至 Antigravity…',waitingApp:'等待 Antigravity',waitingModel:'等待模型生成',waitingRequest:'尚無請求',hover:'將游標移至狀態列可檢視詳細統計',autoConnect:'開啟應用程式後將自動連線',loadingQuota:'讀取配額中…',unavailableQuota:'配額暫時無法取得',
       live:'已連線至 Antigrative Dashboard',stale:'顯示前次成功讀取的配額',offline:'Antigrative Dashboard 尚未連線',
       responseBasis:'統計方式：回覆 Token ÷ 串流耗時；連線階段 TPS 依總時長加權計算。',allBasis:'統計方式：輸出 Token ÷ 串流耗時；此模型未區分回覆與思考過程。',
@@ -105,6 +131,7 @@ module.exports = function createDashboardI18n(initialLanguage) {
       panelInlineReconnecting:'內嵌狀態列正在自動重新連線；此面板仍可檢視統計資料。',
       panelDebugPortReady:'宿主未開啟偵錯連接埠（已自動設定啟動捷徑）；請完全退出並由捷徑重開 Antigravity 以恢復內嵌狀態列，目前可在此面板檢視統計資料。',
       panelDebugPortManual:'Antigravity 2.33+ 需帶 --remote-debugging-port=0 --remote-debugging-address=127.0.0.1（或執行 python3 manage.py launch）啟動以顯示內嵌狀態列；此面板仍可檢視統計資料。',
+      exportTitle:'匯出對話',exportButton:'匯出對話內容',exportLoading:'正在讀取本機對話…',exportEmpty:'找不到可匯出的本機對話記錄。',exportSelectAll:'全選',exportSelectNone:'清空',exportCurrent:'目前',exportThinking:'思考',exportTools:'工具',exportSystem:'系統',exportDirLabel:'儲存資料夾',exportSave:'匯出 ({n})',exportSaving:'匯出中…',exportDone:'✓ 已匯出 ({n})',exportCopy:'複製',exportCopiedShort:'✓ 已複製',exportCopied:'已複製：{title}',exportCopySingle:'複製僅支援勾選 1 個對話。',exportSaved:'已匯出 {n} 個檔案到 {dir}',exportSavedOne:'已儲存：{file}',exportClose:'關閉',exportFailed:'匯出失敗',
     },
   };
   let language=initialLanguage==='zh-CN'||initialLanguage==='zh-TW'?initialLanguage:'en';
@@ -271,10 +298,8 @@ module.exports = function createDashboardI18n(initialLanguage) {
   }
   const SPEED_STYLES=['minimal','cat'];
   const USAGE_SCOPES=['local','account'];
-  const NEON_MASCOT_STATES=['off','on'];
   function normalizeSpeedStyle(value){return SPEED_STYLES.includes(value)?value:'minimal';}
   function normalizeUsageScope(value){return USAGE_SCOPES.includes(value)?value:'local';}
-  function normalizeNeonMascot(value){return NEON_MASCOT_STATES.includes(value)?value:'off';}
   function connectSpeedStyle(options){
     const ctrl=connectChoicePreference({key:'speedStyle',allowed:SPEED_STYLES,fallback:'minimal',...options});
     return {sync:ctrl.sync,choose:ctrl.choose,get style(){return ctrl.value;},get error(){return ctrl.error;},dispose:ctrl.dispose};
@@ -282,10 +307,6 @@ module.exports = function createDashboardI18n(initialLanguage) {
   function connectUsageScope(options){
     const ctrl=connectChoicePreference({key:'usageScope',allowed:USAGE_SCOPES,fallback:'local',...options});
     return {sync:ctrl.sync,choose:ctrl.choose,get scope(){return ctrl.value;},get error(){return ctrl.error;},dispose:ctrl.dispose};
-  }
-  function connectNeonMascot(options){
-    const ctrl=connectChoicePreference({key:'neonMascot',allowed:NEON_MASCOT_STATES,fallback:'off',...options});
-    return {sync:ctrl.sync,choose:ctrl.choose,get value(){return ctrl.value;},get enabled(){return ctrl.value==='on';},get error(){return ctrl.error;},dispose:ctrl.dispose};
   }
   // Straight-segment sparkline with an end point for the minimal style. Pure
   // geometry so every renderer draws the same shape.
@@ -428,5 +449,5 @@ module.exports = function createDashboardI18n(initialLanguage) {
     const critical=f.remaining<0.1||(f.willExhaust&&f.exhaustInMs!==null&&f.exhaustInMs<(chosen.w==='5h'?3600000:86400000));
     return {pace:f.outlook,delta:f.paceDelta,window:chosen.w,critical,label,title:`${winLabel} · ${label}`};
   }
-  return {mountLanguagePicker,normalizeSpeedStyle,connectSpeedStyle,normalizeUsageScope,connectUsageScope,normalizeNeonMascot,connectNeonMascot,minimalTrail,t,rateNote,quotaGroupKind,quotaGroupLabel,chooseQuotaGroup,quotaWindows,quotaRemaining,shortEta,quotaForecast,groupQuotaPace,countdown,elapsed,resetDate,errorMessage,connectPreferences,get language(){return language;},setLanguage(value){language=value==='zh-CN'||value==='zh-TW'?value:'en';if(language!=='en')lastZh=language;},toggle(){language=language==='en'?(lastZh||'zh-TW'):'en';return language;}};
+  return {mountLanguagePicker,normalizeSpeedStyle,connectSpeedStyle,normalizeUsageScope,connectUsageScope,minimalTrail,t,rateNote,quotaGroupKind,quotaGroupLabel,chooseQuotaGroup,quotaWindows,quotaRemaining,shortEta,quotaForecast,groupQuotaPace,countdown,elapsed,resetDate,errorMessage,connectPreferences,get language(){return language;},setLanguage(value){language=value==='zh-CN'||value==='zh-TW'?value:'en';if(language!=='en')lastZh=language;},toggle(){language=language==='en'?(lastZh||'zh-TW'):'en';return language;}};
 };

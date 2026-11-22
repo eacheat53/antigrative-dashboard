@@ -31,6 +31,7 @@ async function entryFixture(host,url,selection=false){
     'preferences.mjs':{PreferencesStore:class{async snapshot(){return {};}}},
     'sidecar-owner.mjs':{SidecarOwner:Owner},'host-theme.mjs':{readHostTheme:async()=>({})},
     'panel-source.mjs':{panelAppSource:()=>'',panelPageSource:()=>''},
+    'exporter.mjs':{defaultExportDir:()=>'',exportConversations:async()=>({ok:true,files:[]}),listExportableConversations:async()=>[]},
     'updater.mjs':{AppUpdater:class{},releaseRuntimeDirectory(){}},
     'history.mjs':{SessionHistory:class{}},'transcript.mjs':{TranscriptReader:class{},transcriptBrainRoot:()=>''},
     'client.mjs':{IdeClient:class{}},'runtime.mjs':{ideTargets:async()=>({targets:[],port:0})},

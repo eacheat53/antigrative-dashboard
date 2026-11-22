@@ -1,10 +1,9 @@
 # Antigrative Dashboard v0.9.8
 
-Makes the **Neon (氖龙) plush mascot Easter egg opt-in (off by default)** so the standard download stays clean for everyone while keeping the Easter egg one click away:
+Removes the **Neon (氖龙)** plush mascot Easter egg and its toggle completely so standard downloads and in-app updates stay clean and lightweight, while retaining all v0.9.6 macOS launcher ergonomics and v0.9.5 memory/backfill optimizations:
 
-- **Off by default (zero overhead):** Fresh downloads and in-app updates no longer show the Neon mascot unless enabled, mounting zero mascot DOM until turned on.
-- **Built-in `✦ Neon` / `✦ 氖龙` toggle:** Hover the **Context** chip and click the compact `✦ Neon` (`✦ 氖龙` / `✦ 氖龍`) toggle next to the language switcher in the card footer to enable or disable the Easter egg anytime. Saved durably in `preferences.json` and synced immediately across open composers.
-- **Full Neon interactions when enabled:** Includes the baked two-frame plush WebP companion, custom frosted `✦ 氖龙` hover bubble, press-and-rub squish & spring wobble, click-to-tuck peeking toggle, proximity curiosity tilt, typing rhythm nods, and scroll-safe collision avoidance.
+- **Completely Neon-free default:** Removes all Neon mascot code, embedded WebP assets, and toggles from both the Desktop App plugin and standalone IDE extension.
+- **Want the Neon Easter Egg?** The dedicated `v0.9.7 (Neon Easter Egg)` release remains available on the [Releases page](https://github.com/ATtacK030130/antigrative-dashboard/releases/tag/v0.9.7).
 
 ## Install or update
 
@@ -14,4 +13,4 @@ Makes the **Neon (氖龙) plush mascot Easter egg opt-in (off by default)** so t
 
 Existing statistics, preferences and IDE extension storage are retained. SHA-256 checksum files accompany both packages.
 
-[Compatibility](https://github.com/ATtacK030130/antigrative-dashboard/blob/v0.9.8/COMPATIBILITY.md) · [IDE installation](https://github.com/ATtacK030130/antigrative-dashboard/blob/v0.9.8/ide/README.md)
+[Compatibility](https://github.com/ATtacK030130/antigrative-dashboard/blob/main/COMPATIBILITY.md) · [IDE installation](https://github.com/ATtacK030130/antigrative-dashboard/blob/main/ide/README.md)

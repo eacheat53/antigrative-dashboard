@@ -128,6 +128,8 @@ function rendererBridge(binding, allowNested = false) {
     updatePlugin: input => call('update', input),
     getPreferences: () => call('preferences', {}),
     setPreferences: input => call('preferences', input),
+    listExports: input => call('export-list', input || {}),
+    exportChats: input => call('export', input || {}),
     report: input => { void call('diagnostic', input); },
   };
 }
@@ -150,7 +152,7 @@ export function makeRendererSource(i18n, widget, theme = '', owner = null, gener
 
 export class RuntimeUi {
   constructor({ snapshot, source, profile = platformPaths().profile,
-    dataDir, preferences, updater=null, owner=null, owns=async()=>true, enabled = async () => true, discover = discoverTargets, diagnoseError = null, onTargets = null, targetOrigin = target => new URL(target.url).origin, sourceForTarget = () => source, connect = (url, options) => new CdpConnection(url, options), interval = 3000 } = {}) {
+    dataDir, preferences, updater=null, exportList=null, runExport=null, owner=null, owns=async()=>true, enabled = async () => true, discover = discoverTargets, diagnoseError = null, onTargets = null, targetOrigin = target => new URL(target.url).origin, sourceForTarget = () => source, connect = (url, options) => new CdpConnection(url, options), interval = 3000 } = {}) {
     this.snapshot = snapshot; this.source = source; this.profile = profile; this.dataDir = dataDir; this.enabled = enabled;
     this.discover = discover; this.diagnoseError = diagnoseError; this.onTargets = onTargets; this.connect = connect; this.interval = interval; this.sessions = new Map(); this.running = false;
     this.targetOrigin=targetOrigin;
@@ -158,6 +160,7 @@ export class RuntimeUi {
     this.health = { state: 'waiting', mode: 'runtime', message: 'Waiting for the app renderer', windows: 0 };
     this.preferences=preferences;
     this.updater=updater;
+    this.exportList=exportList;this.runExport=runExport;
     this.owner=owner;this.owns=owns;
     this.binding=owner?BINDING+'_'+owner.replaceAll('-',''):BINDING;
     this.rendererTheme={};
@@ -205,7 +208,7 @@ export class RuntimeUi {
     if (message.method === 'Runtime.executionContextDestroyed') { if(connection.contexts.has(p.executionContextId))connection.generation++;connection.contexts.delete(p.executionContextId);connection.contextCandidates.delete(p.executionContextId);return; }
     if (message.method !== 'Runtime.bindingCalled' || p.name !== this.binding || !connection.contexts.has(p.executionContextId)) return;
     if(!await this.owns()||connection.closed||connection.revoked||!connection.contexts.has(p.executionContextId))return;
-    if (typeof p.payload !== 'string' || p.payload.length > 4096 || connection.inflight >= 8) return;
+    if (typeof p.payload !== 'string' || p.payload.length > 8192 || connection.inflight >= 8) return;
     let input;
     try { input = JSON.parse(p.payload); if (!Number.isSafeInteger(input.id) || input.id < 1) return; } catch { return; }
     const generation=connection.generation;
@@ -220,17 +223,28 @@ export class RuntimeUi {
       }
       else if (input.type === 'preferences' && this.preferences) {
         const value=input.input;
-        if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','usageScope','neonMascot'].includes(key)))throw new Error('Invalid preferences request');
+        if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','usageScope','contextLimitOverride'].includes(key)))throw new Error('Invalid preferences request');
         result=Object.keys(value).length?await this.preferences.set(value):await this.preferences.get();
+      }
+      else if (input.type === 'export-list' && this.exportList) {
+        const value = input.input && typeof input.input === 'object' && !Array.isArray(input.input) ? input.input : {};
+        if (value.conversationId != null && !GUID.test(value.conversationId)) throw new Error('Invalid conversation ID');
+        result = await this.exportList({ conversationId: value.conversationId || null });
+      }
+      else if (input.type === 'export' && this.runExport) {
+        const value = input.input;
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid export request');
+        result = await this.runExport(value);
       }
       else if (input.type === 'diagnostic' && ['boot', 'mounted', 'mount-error'].includes(input.input?.stage)) {
         if (input.input.stage === 'mounted' && input.input.editorFound && input.input.composerFound) connection.mounted = true;
       } else return;
-      if (JSON.stringify(result).length > 1048576) result = offline('Metrics response too large');
+      const maxResponseBytes = input.type === 'export' ? 16 * 1024 * 1024 : 1048576;
+      if (JSON.stringify(result).length > maxResponseBytes) result = input.type === 'export' ? { ok: false, error: 'Export payload too large to copy' } : offline('Metrics response too large');
       if(this.stopping||!await this.owns()||!current())return;
       await connection.command('Runtime.evaluate', { expression: this.rendererGuard('window.__agPulseRuntimeBridge?.resolve(' + input.id + ',' + JSON.stringify(result) + ')'), contextId: p.executionContextId });
-    } catch {
-      const failure=input.type==='preferences'?{error:'Language preference could not be saved or read'}:offline('等待 Antigrative Dashboard 重新连接');
+    } catch (error) {
+      const failure=input.type==='preferences'?{error:'Language preference could not be saved or read'}:(input.type==='export'||input.type==='export-list')?{ok:false,error:error?.message||'Export failed'}:offline('等待 Antigrative Dashboard 重新连接');
       if(this.stopping||!await this.owns()||!current())return;
       try { await connection.command('Runtime.evaluate', { expression: this.rendererGuard('window.__agPulseRuntimeBridge?.resolve(' + input.id + ',' + JSON.stringify(failure) + ')'), contextId: p.executionContextId }); } catch { /* The next poll reconnects. */ }
     } finally { connection.inflight--; }
