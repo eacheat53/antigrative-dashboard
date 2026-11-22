@@ -142,15 +142,20 @@ test('large >1 MiB legacy JSON streams atomically without whole-file parse and r
 
   const validFile=ledger.file(acctA,cid(1));
   const count=5000;
-  const handle=await open(validFile,'w');
-  try{
-    await handle.write(`{"schema":1,"account":"${acctA}","records":[`);
-    for(let i=0;i<count;i++){
-      const r=makeRow(`big-${i}`,{model:'Model-'+'X'.repeat(80)});
-      await handle.write((i?',':'')+JSON.stringify(r));
-    }
-    await handle.write(']}');
-  }finally{await handle.close();}
+  const writeBigJson=async (target,prefix,suffix,keyPrefix,modelName)=>{
+    const handle=await open(target,'w');
+    try{
+      await handle.write(prefix);
+      let chunk='';
+      for(let i=0;i<count;i++){
+        chunk+=(i?',':'')+JSON.stringify(makeRow(`${keyPrefix}-${i}`,{model:modelName}));
+        if(chunk.length>=65536){await handle.write(chunk);chunk='';}
+      }
+      if(chunk)await handle.write(chunk);
+      await handle.write(suffix);
+    }finally{await handle.close();}
+  };
+  await writeBigJson(validFile,`{"schema":1,"account":"${acctA}","records":[`,']}','big','Model-'+'X'.repeat(80));
   assert.ok((await stat(validFile)).size>1024*1024);
 
   let directReads=0;
@@ -165,15 +170,7 @@ test('large >1 MiB legacy JSON streams atomically without whole-file parse and r
 
   // Add a >1 MiB file with wrong account at the end (must roll back staging cleanly with 0 leaked rows).
   const badFile=ledger.file(acctA,cid(2));
-  const badHandle=await open(badFile,'w');
-  try{
-    await badHandle.write('{"schema":1,"records":[');
-    for(let i=0;i<count;i++){
-      const r=makeRow(`leak-${i}`,{model:'Model-'+'Y'.repeat(80)});
-      await badHandle.write((i?',':'')+JSON.stringify(r));
-    }
-    await badHandle.write(`],"account":"${acctB}"}`);
-  }finally{await badHandle.close();}
+  await writeBigJson(badFile,'{"schema":1,"records":[',`],"account":"${acctB}"}`,'leak','Model-'+'Y'.repeat(80));
   assert.ok((await stat(badFile)).size>1024*1024);
 
   const second=await new UsageLedger(dir).summary(acctA,Date.parse('2026-10-30T08:00:00Z'));
