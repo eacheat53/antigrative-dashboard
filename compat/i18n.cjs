@@ -203,7 +203,10 @@ module.exports = function createDashboardI18n(initialLanguage) {
     if(known[text])return language==='zh-CN'?text:language==='zh-TW'?known[text].tw:known[text].en;
     if(ideKnown[text])return language==='zh-CN'?ideKnown[text].zh:language==='zh-TW'?ideKnown[text].tw:ideKnown[text].en;
     const match=text.match(/^Antigravity 接口 (\w+) 返回 (\d+)$/);
-    if(match)return language==='zh-CN'?text:language==='zh-TW'?`Antigravity API ${match[1]} 回傳 HTTP ${match[2]}`:`Antigravity ${match[1]} returned HTTP ${match[2]}.`;
+    if(match){
+      if(match[2]==='403')return language==='zh-CN'?`Antigravity 当前版本限制访问 ${match[1]} 接口（HTTP 403）`:language==='zh-TW'?`Antigravity 目前版本限制存取 ${match[1]} API（HTTP 403）`:`Antigravity restricted access to ${match[1]} (HTTP 403).`;
+      return language==='zh-CN'?text:language==='zh-TW'?`Antigravity API ${match[1]} 回傳 HTTP ${match[2]}`:`Antigravity ${match[1]} returned HTTP ${match[2]}.`;
+    }
     return language==='en'?'Statistics are temporarily unavailable.':t('panelUnavailable');
   }
   function connectPreferences({read,write,cache=()=>{},changed=()=>{}}) {
@@ -350,7 +353,7 @@ module.exports = function createDashboardI18n(initialLanguage) {
   function quotaGroupKind(group) {
     const id=String(group?.id||''),name=String(group?.name||''),value=id+' '+name;
     if(/(?:^|[^a-z])argon(?:$|[^a-z])/i.test(value))return 'gemini-argon';
-    if(/gemini|hydrogen|carbon|orchestrator/i.test(value))return 'gemini';
+    if(/gemini|hydrogen|carbon|neon|orchestrator/i.test(value))return 'gemini';
     if(/claude|sonnet|opus|haiku|anthropic|gpt|openai/i.test(value)||/(?:^|[^a-z0-9])o[134](?:$|[^a-z0-9])/i.test(value)||/^3p(?:$|[-_])/i.test(id))return '3p';
     return null;
   }

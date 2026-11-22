@@ -2,7 +2,7 @@ import {BackgroundStatistics} from './background-statistics.mjs';
 import {dirname,join} from 'node:path';
 import {collectionFailure} from './collection-state.mjs';
 import { createHash } from 'node:crypto';
-import { AntigravityClient } from './client.mjs';
+import { AntigravityClient, isRestrictedRpcError } from './client.mjs';
 import { quotaMetrics, trajectoryMetrics } from './metrics.mjs';
 import { SessionHistory, usableMetrics, reconcileMetrics, safeMetrics } from './history.mjs';
 import { TranscriptReader } from './transcript.mjs';
@@ -180,12 +180,21 @@ export class MetricsStore {
       catch { if(current())this.persistenceError = '统计暂时无法保存到本地'; }
       if (!current()) throw new Error('后台已重新连接，请等待刷新');
       return entry.data;
-    })().catch(error => {
+    })().catch(async error => {
       if(current()){
         entry.collection=collectionFailure(error);
         if(entry.collection&&entry.collection.kind!=='field')this.startBackground(scope,id,entry,current);
       }
       if (current() && usableMetrics(entry.data)) { entry.updatedAt = Date.now(); entry.data = {...entry.data,transcriptRestoredFromHistory:!!entry.data.transcriptStats,restoredFromHistory:true,savedAt:entry.savedAt || null}; return entry.data; }
+      if (current() && isRestrictedRpcError(error) && typeof this.transcripts?.readMetrics === 'function') {
+        try {
+          const fallback = await this.transcripts.readMetrics(id);
+          if (current() && usableMetrics(fallback)) {
+            entry.updatedAt = Date.now();
+            return { ...fallback, conversationId: id };
+          }
+        } catch {}
+      }
       throw error;
     }).finally(() => { entry.pending = null; });
     return entry.pending;

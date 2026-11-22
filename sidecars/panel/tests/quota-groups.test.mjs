@@ -14,6 +14,8 @@ test('quota labels and selection agree across IDs, display names and order in al
     assert.equal(ui.chooseQuotaGroup(groups,'Gemini 4 Argon').id,group.id);
     assert.equal(ui.chooseQuotaGroup(groups,'Gemini Flash').id,'gemini');
     assert.equal(ui.chooseQuotaGroup(groups,'Gemini 4 Hydrogen (XHigh)').id,'gemini');
+    assert.equal(ui.chooseQuotaGroup(groups,'Gemini 4 Neon (High)').id,'gemini');
+    assert.equal(ui.chooseQuotaGroup(groups,'Neon (High)').id,'gemini');
     assert.equal(ui.chooseQuotaGroup(groups,'Orchestrator (Carbon)').id,'gemini');
     assert.equal(ui.chooseQuotaGroup(groups,'GPT-5').id,'3p');
     assert.equal(ui.chooseQuotaGroup(groups,'Claude Sonnet').id,'3p');

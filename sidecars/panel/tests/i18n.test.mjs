@@ -86,5 +86,8 @@ test('all locales sanitize raw command errors and translate discovery timeouts',
   }
   const zh=create('zh-CN');
   assert.equal(zh.errorMessage('Antigravity 接口 GetUserStatus 返回 500'),'Antigravity 接口 GetUserStatus 返回 500');
+  assert.equal(zh.errorMessage('Antigravity 接口 RetrieveUserQuotaSummary 返回 403'),'Antigravity 当前版本限制访问 RetrieveUserQuotaSummary 接口（HTTP 403）');
+  assert.equal(create('zh-TW').errorMessage('Antigravity 接口 RetrieveUserQuotaSummary 返回 403'),'Antigravity 目前版本限制存取 RetrieveUserQuotaSummary API（HTTP 403）');
+  assert.equal(create('en').errorMessage('Antigravity 接口 RetrieveUserQuotaSummary 返回 403'),'Antigravity restricted access to RetrieveUserQuotaSummary (HTTP 403).');
   assert.equal(zh.errorMessage('Timed out reading Antigravity IDE processes'),'读取 Antigravity IDE 进程信息超时');
 });

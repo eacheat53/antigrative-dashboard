@@ -7,22 +7,47 @@ import { TrajectoryJson } from './trajectory-json.mjs';
 import { TrajectoryReader } from './trajectory-reader.mjs';
 
 const SERVICE = '/exa.language_server_pb.LanguageServerService/';
-function serverFromPorts(logPorts, processes) {
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+function parseEnvLoopbackPort(address) {
+  if (typeof address !== 'string') return null;
+  const trimmed = address.trim();
+  if (!trimmed) return null;
+  try {
+    const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+    const parsed = new URL(hasScheme ? trimmed : `http://${trimmed}`);
+    if (hasScheme && parsed.protocol !== 'http:') return null;
+    if (!LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+    const port = Number(parsed.port);
+    return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null;
+  } catch {
+    return null;
+  }
+}
+export function isRestrictedRpcError(error) {
+  return Boolean(error && (error.restricted === true || error.code === 'RPC_RESTRICTED'));
+}
+function serverFromPorts(logPorts, processes, env = null) {
   const rows = (Array.isArray(processes) ? processes : [processes]).filter(p => /--standalone\b/.test(p.CommandLine || ''));
   if (rows.length !== 1) throw new Error(rows.length ? '检测到多个 Antigravity 实例，请保留一个' : '未找到 Antigravity 桌面后台');
   const ports = new Set([rows[0].Ports].flat().map(Number));
-  const port = logPorts.find(p=>ports.has(p));
+  const envPort = parseEnvLoopbackPort(env?.ANTIGRAVITY_LS_ADDRESS);
+  const port = logPorts.find(p=>ports.has(p)) ?? (envPort && ports.has(envPort) ? envPort : null);
   if (!port) throw new Error('等待 Antigravity 本地接口启动');
-  const csrf = rows[0].CommandLine.match(/--csrf_token(?:=|\s+)"?([^\s"]+)/)?.[1];
+  const cliCsrf = rows[0].CommandLine.match(/--csrf_token(?:=|\s+)"?([^\s"]+)/)?.[1] || '';
+  const envCsrf = typeof env?.ANTIGRAVITY_CSRF_TOKEN === 'string' ? env.ANTIGRAVITY_CSRF_TOKEN.trim() : '';
+  const csrf = cliCsrf || envCsrf;
   if (!csrf) throw new Error('当前版本未提供可用的本地检测凭据');
-  return {port,csrf,pid:rows[0].ProcessId};
+  const result = {port,csrf,pid:rows[0].ProcessId};
+  Object.defineProperty(result, 'credentialSource', { value: cliCsrf ? 'cmdline' : 'sidecar-env', enumerable: false });
+  return result;
 }
-export function serverFromDiscovery(log, processes) { return serverFromPorts(httpLogPorts(log),processes); }
+export function serverFromDiscovery(log, processes, { env = null } = {}) { return serverFromPorts(httpLogPorts(log),processes,env); }
 export class AntigravityClient {
-  constructor({paths=platformPaths,readLog=readLogTail,logStat=stat,processes=discoverProcesses,probe=probeLoopbackPort,pidAlive=isProcessAlive,now=Date.now,onRpc=null}={}) {
-    this.paths=paths;this.readLog=readLog;this.logStat=logStat;this.processes=processes;this.probe=probe;this.pidAlive=pidAlive;this.now=now;this.onRpc=onRpc;this.reader=new TrajectoryReader(this);
+  constructor({paths=platformPaths,readLog=readLogTail,logStat=stat,processes=discoverProcesses,probe=probeLoopbackPort,pidAlive=isProcessAlive,now=Date.now,onRpc=null,env=process.env}={}) {
+    this.paths=paths;this.readLog=readLog;this.logStat=logStat;this.processes=processes;this.probe=probe;this.pidAlive=pidAlive;this.now=now;this.onRpc=onRpc;this.env=env;this.reader=new TrajectoryReader(this);
   }
   server = null;
+  verifiedServer = null;
   discoveredAt = 0;
   discovering = null;
   lastScanAt = -Infinity;
@@ -61,6 +86,7 @@ export class AntigravityClient {
 
   async discoverNow() {
     this.server=null;
+    this.verifiedServer=null;
     // A sidecar can outlive a renderer/backend restart. Its injected token may
     // then refer to the previous LS instance; pair the current log port with
     // the current standalone process credential instead of mixing generations.
@@ -87,7 +113,8 @@ export class AntigravityClient {
     // Another valid socket (for example gRPC) does not prove the HTTP socket
     // is present. Supply log hints to trigger one bounded Windows fallback;
     // the hinted ports still require independent live PID ownership proof.
-    const expectedPorts=[...new Set(logs.flatMap(log=>log.ports||[]))];
+    const envPort = parseEnvLoopbackPort(this.env?.ANTIGRAVITY_LS_ADDRESS);
+    const expectedPorts=[...new Set([...logs.flatMap(log=>log.ports||[]),...(envPort?[envPort]:[])])];
     const parsed = await this.processes({expectedPorts});
     if (!parsed || Array.isArray(parsed) && !parsed.length) throw new Error('请先打开 Antigravity');
     // Credentials stay in process memory. They are never logged, persisted, or
@@ -97,10 +124,14 @@ export class AntigravityClient {
       try {
         if(entry.error)throw entry.error;
         foundLog=true;
-        this.server=serverFromPorts(entry.ports,parsed);break;
+        this.server=serverFromPorts(entry.ports,parsed,this.env);break;
       } catch(error) {
         if(error.code!=='ENOENT'&&error.code!=='ENOTDIR')lastError=error;
       }
+    }
+    if(!this.server&&envPort){
+      try { this.server=serverFromPorts([],parsed,this.env); }
+      catch(error) { if(!lastError&&foundLog)lastError=error; }
     }
     if(!this.server)throw lastError||new Error(foundLog?'等待 Antigravity 本地接口启动':'未找到 Antigravity 语言服务日志，请检查日志路径');
     this.discoveredAt = this.now();
@@ -140,7 +171,7 @@ export class AntigravityClient {
             if (res.statusCode !== 200) return reject(Object.assign(new Error(`Antigravity 接口 ${method} 返回 ${res.statusCode}`),{status:res.statusCode}));
             try {
               const value=projected?projected.end():JSON.parse(text);
-              if(this.server===server)this.discoveredAt=this.now();
+              if(this.server===server){this.discoveredAt=this.now();this.verifiedServer=server;}
               try{this.onRpc?.({method,bytes,retainedBytes:projected?.retained??Buffer.byteLength(text),ms:this.now()-started});}catch{}
               resolve(value);
             }
@@ -155,16 +186,27 @@ export class AntigravityClient {
         req.end(data);
       });
     } catch (error) {
+      if (error?.status === 403 && server.credentialSource === 'sidecar-env' && this.verifiedServer === server) {
+        error.restricted = true;
+        error.code = 'RPC_RESTRICTED';
+        error.method = method;
+        throw error;
+      }
       // A missing historical cascade, busy API or malformed response does not
       // prove the process/credential changed. Do not launch CIM scans for it.
       const endpointLost=[401,403].includes(error.status)||['ECONNREFUSED','ECONNRESET','EPIPE','ENOTCONN'].includes(error.code);
       if(!endpointLost)throw error;
       // A late failure from an old endpoint cannot invalidate a newer one.
       if(this.server===server){
-        this.server=null;this.discoveryError=error;
+        this.server=null;this.verifiedServer=null;this.discoveryError=error;
         this.retryAt=Math.max(this.retryAt,this.lastScanAt+3000);
       }
       if(retry){await this.discover();return this.call(method,body,false);}
+      if (error?.status === 403 && server.credentialSource === 'sidecar-env') {
+        error.restricted = true;
+        error.code = 'RPC_RESTRICTED';
+        error.method = method;
+      }
       throw error;
     }
   }
@@ -193,7 +235,7 @@ export class AntigravityClient {
         watch=setInterval(()=>{if(isCurrent()!==true)abort(Error('Statistics stream cancelled'));},250);watch.unref();req.end(input);
       });
       if(res.statusCode!==200)throw Object.assign(Error('Statistics stream HTTP '+res.statusCode),{status:res.statusCode});
-      if(this.server===server)this.discoveredAt=this.now();
+      if(this.server===server){this.discoveredAt=this.now();this.verifiedServer=server;}
       res.setEncoding('utf8');
       for await(const chunk of res){
         assertCurrent();bytes+=Buffer.byteLength(chunk);
@@ -212,9 +254,15 @@ export class AntigravityClient {
       try{this.onRpc?.({method,bytes,retainedBytes:peakRetained,ms:this.now()-started,streamed:true});}catch{}
       return result;
     } catch(error) {
+      if (error?.status === 403 && server.credentialSource === 'sidecar-env') {
+        error.restricted = true;
+        error.code = 'RPC_RESTRICTED';
+        error.method = method;
+        if (this.verifiedServer === server) throw error;
+      }
       const endpointLost=[401,403].includes(error?.status)||['ECONNREFUSED','ECONNRESET','EPIPE','ENOTCONN'].includes(error?.code);
       if(endpointLost&&this.server===server){
-        this.server=null;this.discoveryError=error;
+        this.server=null;this.verifiedServer=null;this.discoveryError=error;
         this.retryAt=Math.max(this.retryAt,this.lastScanAt+3000);
       }
       throw error;

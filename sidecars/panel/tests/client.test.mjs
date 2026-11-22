@@ -7,7 +7,7 @@ import {EventEmitter} from 'node:events';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {AntigravityClient} from '../client.mjs';
+import {AntigravityClient,serverFromDiscovery,isRestrictedRpcError} from '../client.mjs';
 import {httpLogPorts,readLogTail} from '../discovery.mjs';
 
 // Synthetic RPC fixtures own every accepted socket. End them explicitly:
@@ -165,4 +165,64 @@ test('idle lease expiry verifies live PID and loopback port without spawning Pow
  // Explicit force=true always runs a full process scan.
  alive=true;now=61000;
  assert.equal((await client.discover(true)).port,port);assert.equal(scans,3);
+});
+
+test('2.34.0+ falls back to sidecar ANTIGRAVITY_CSRF_TOKEN when --csrf_token is absent from cmdline',async ()=>{
+ const log='listening on random port at 50831 for HTTP\n';
+ const rows=[{ProcessId:15732,CommandLine:'language_server.exe --standalone --override_ide_version 2.34.0 --enable_sidecars --read_host_bridge_token_from_stdin',Ports:[50830,50831]}];
+ assert.throws(()=>serverFromDiscovery(log,rows,{env:{}}),/本地检测凭据/);
+ const discovered=serverFromDiscovery(log,rows,{env:{ANTIGRAVITY_CSRF_TOKEN:'scoped-secret'}});
+ assert.deepEqual(discovered,{port:50831,csrf:'scoped-secret',pid:15732});
+ assert.equal(discovered.credentialSource,'sidecar-env');
+
+ // Missing log falls back to loopback ANTIGRAVITY_LS_ADDRESS only when PID-owned and plain HTTP.
+ const noLogClient=new AntigravityClient({
+  paths:()=>({log:'missing.log',logCandidates:['missing.log']}),
+  readLog:async()=>{throw Object.assign(new Error('ENOENT'),{code:'ENOENT'});},
+  processes:async()=>rows,
+  env:{ANTIGRAVITY_CSRF_TOKEN:'scoped-secret',ANTIGRAVITY_LS_ADDRESS:'http://127.0.0.1:50831'},
+ });
+ const envEndpoint=await noLogClient.discover();
+ assert.deepEqual(envEndpoint,{port:50831,csrf:'scoped-secret',pid:15732});
+
+ // Rejects non-loopback, HTTPS-only, and foreign-PID env addresses.
+ for(const badAddr of ['http://192.168.1.5:50831','https://127.0.0.1:50830','127.0.0.1:9999']){
+  const rejected=new AntigravityClient({
+   paths:()=>({log:'missing.log',logCandidates:['missing.log']}),
+   readLog:async()=>{throw Object.assign(new Error('ENOENT'),{code:'ENOENT'});},
+   processes:async()=>rows,
+   env:{ANTIGRAVITY_CSRF_TOKEN:'scoped-secret',ANTIGRAVITY_LS_ADDRESS:badAddr},
+  });
+  await assert.rejects(rejected.discover(),/语言服务日志/);
+ }
+});
+
+test('verified sidecar-env endpoint treats single-RPC HTTP 403 as restricted without invalidating endpoint',async t=>{
+ let scans=0,quotaStatus=200,userStatus=200,now=10000;
+ const server=createServer((req,res)=>{
+  req.resume();
+  const isQuota=req.url.endsWith('/RetrieveUserQuotaSummary');
+  res.writeHead(isQuota?quotaStatus:userStatus,{'Content-Type':'application/json'});
+  res.end('{}');
+ });
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>stopServer(server));
+ const port=server.address().port;
+ const client=new AntigravityClient({
+  now:()=>now,
+  paths:()=>({log:'fixture'}),
+  readLog:async()=>`listening on random port at ${port} for HTTP\n`,
+  processes:async()=>{scans++;return [{ProcessId:42,CommandLine:'language_server.exe --standalone --override_ide_version 2.34.0',Ports:[port]}];},
+  env:{ANTIGRAVITY_CSRF_TOKEN:'sidecar-scoped'},
+ });
+ assert.deepEqual(await client.call('GetUserStatus'),{});
+ assert.equal(scans,1);
+ // Once verified, a 403 on another RPC is marked restricted and keeps the healthy endpoint.
+ quotaStatus=403;
+ await assert.rejects(client.call('RetrieveUserQuotaSummary'),err=>isRestrictedRpcError(err)&&err.status===403&&err.method==='RetrieveUserQuotaSummary');
+ assert.equal(scans,1,'Single restricted RPC must not trigger process rescan');
+ assert.ok(client.server,'Verified endpoint stays intact');
+ // A 401 still invalidates the endpoint and rediscovers after cooldown.
+ userStatus=401;now+=4000;
+ await assert.rejects(client.call('GetUserStatus'),err=>err.status===401&&!isRestrictedRpcError(err));
+ assert.equal(scans,2);
 });
