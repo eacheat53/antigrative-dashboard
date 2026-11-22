@@ -154,3 +154,17 @@ test('usageScope persists independently, defaults cleanly and validates choices'
   fail=true;await scopeCtrl.choose('account');assert.equal(scopeCtrl.scope,'account');assert.equal(scopeCtrl.error,true);
   scopeCtrl.dispose();
 });
+
+test('contextLimitOverride persists across reads, normalizes presets and rejects invalid values',async t=>{
+  const {file,store}=await fixture(t);
+  assert.equal((await store.get()).contextLimitOverride,undefined);
+  await store.set({contextLimitOverride:'512K'});
+  assert.equal((await new PreferencesStore({file}).get()).contextLimitOverride,'512k');
+  await store.set({contextLimitOverride:'600k'});
+  assert.equal((await store.get()).contextLimitOverride,'600000');
+  await store.set({contextLimitOverride:'1m'});
+  assert.equal((await store.get()).contextLimitOverride,'1000000');
+  await store.set({contextLimitOverride:'auto'});
+  assert.equal((await store.get()).contextLimitOverride,'auto');
+  for(const bad of ['32k','4m','abc',null,12345])await assert.rejects(store.set({contextLimitOverride:bad}));
+});
